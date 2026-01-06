@@ -91,10 +91,9 @@ export function TravelMap({ locations, optimizationResult, showOptimized, classN
     // Draw routes if we have optimization result
     if (optimizationResult && locations.length >= 2) {
       const createPath = (pathIndices: number[]): L.LatLngExpression[] => {
-        const coords: L.LatLngExpression[] = pathIndices.map((idx) => [
-          locations[idx].lat,
-          locations[idx].lng,
-        ]);
+        const coords: L.LatLngExpression[] = pathIndices
+          .filter((idx) => locations[idx] !== undefined)
+          .map((idx) => [locations[idx].lat, locations[idx].lng]);
         // Close the loop
         if (coords.length > 0) {
           coords.push(coords[0]);
