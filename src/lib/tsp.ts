@@ -92,14 +92,14 @@ export function calculateTotalDistance(
   return total;
 }
 
-// Nearest Neighbor Algorithm - creates initial route
-export function nearestNeighborTSP(distanceMatrix: number[][]): number[] {
+// Nearest Neighbor Algorithm - creates initial route from a given starting point
+export function nearestNeighborTSP(distanceMatrix: number[][], startCity: number = 0): number[] {
   const n = distanceMatrix.length;
   if (n === 0) return [];
   if (n === 1) return [0];
 
-  const visited = new Set<number>([0]);
-  const path: number[] = [0];
+  const visited = new Set<number>([startCity]);
+  const path: number[] = [startCity];
 
   while (visited.size < n) {
     const current = path[path.length - 1];
@@ -127,7 +127,7 @@ export function twoOptOptimization(
   path: number[],
   distanceMatrix: number[][]
 ): number[] {
-  if (path.length < 4) return path;
+  if (path.length < 3) return path;
 
   let improved = true;
   let bestPath = [...path];
@@ -136,12 +136,12 @@ export function twoOptOptimization(
   while (improved) {
     improved = false;
 
-    for (let i = 1; i < bestPath.length - 1; i++) {
-      for (let j = i + 1; j < bestPath.length; j++) {
+    for (let i = 0; i < bestPath.length - 1; i++) {
+      for (let j = i + 2; j < bestPath.length; j++) {
         const newPath = twoOptSwap(bestPath, i, j);
         const newDistance = calculateTotalDistance(newPath, distanceMatrix);
 
-        if (newDistance < bestDistance) {
+        if (newDistance < bestDistance - 0.0001) { // Small epsilon for floating point
           bestPath = newPath;
           bestDistance = newDistance;
           improved = true;
@@ -155,10 +155,54 @@ export function twoOptOptimization(
 
 // Helper function for 2-opt swap
 function twoOptSwap(path: number[], i: number, j: number): number[] {
-  const newPath = path.slice(0, i);
-  const reversedSegment = path.slice(i, j + 1).reverse();
+  const newPath = path.slice(0, i + 1);
+  const reversedSegment = path.slice(i + 1, j + 1).reverse();
   const endSegment = path.slice(j + 1);
   return [...newPath, ...reversedSegment, ...endSegment];
+}
+
+// Brute force for small number of locations (factorial complexity but fast for n <= 8)
+function bruteForceOptimize(distanceMatrix: number[][]): number[] {
+  const n = distanceMatrix.length;
+  if (n <= 1) return [0];
+  if (n === 2) return [0, 1];
+
+  // Generate all permutations starting from city 0
+  const cities = Array.from({ length: n - 1 }, (_, i) => i + 1);
+  const permutations = getPermutations(cities);
+  
+  let bestPath = [0, ...cities];
+  let bestDistance = calculateTotalDistance(bestPath, distanceMatrix);
+
+  for (const perm of permutations) {
+    const path = [0, ...perm];
+    const distance = calculateTotalDistance(path, distanceMatrix);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPath = path;
+    }
+  }
+
+  return bestPath;
+}
+
+// Generate all permutations of an array
+function getPermutations(arr: number[]): number[][] {
+  if (arr.length <= 1) return [arr];
+  
+  const result: number[][] = [];
+  
+  for (let i = 0; i < arr.length; i++) {
+    const current = arr[i];
+    const remaining = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    const perms = getPermutations(remaining);
+    
+    for (const perm of perms) {
+      result.push([current, ...perm]);
+    }
+  }
+  
+  return result;
 }
 
 // Main TSP solver
@@ -170,15 +214,36 @@ export function solveTSP(
 
   const distanceMatrix = createDistanceMatrix(locations);
   const speed = VEHICLE_SPEEDS[vehicleType];
+  const n = locations.length;
 
   // Original route (user input order)
   const originalPath = locations.map((_, idx) => idx);
   const originalDistance = calculateTotalDistance(originalPath, distanceMatrix);
   const originalTime = (originalDistance / speed) * 60; // Convert to minutes
 
-  // Get optimized route using Nearest Neighbor + 2-opt
-  const nnPath = nearestNeighborTSP(distanceMatrix);
-  const optimizedPath = twoOptOptimization(nnPath, distanceMatrix);
+  let optimizedPath: number[];
+
+  // Use brute force for small sets (up to 8 locations), otherwise use heuristics
+  if (n <= 8) {
+    optimizedPath = bruteForceOptimize(distanceMatrix);
+  } else {
+    // Try nearest neighbor from multiple starting points and pick the best
+    let bestPath = nearestNeighborTSP(distanceMatrix, 0);
+    let bestDistance = calculateTotalDistance(bestPath, distanceMatrix);
+
+    for (let start = 1; start < Math.min(n, 5); start++) {
+      const path = nearestNeighborTSP(distanceMatrix, start);
+      const distance = calculateTotalDistance(path, distanceMatrix);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestPath = path;
+      }
+    }
+
+    // Apply 2-opt optimization
+    optimizedPath = twoOptOptimization(bestPath, distanceMatrix);
+  }
+
   const optimizedDistance = calculateTotalDistance(optimizedPath, distanceMatrix);
   const optimizedTime = (optimizedDistance / speed) * 60;
 
