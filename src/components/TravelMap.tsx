@@ -11,12 +11,57 @@ interface TravelMapProps {
   className?: string;
 }
 
+// SVG arrow decorator pattern
+const createArrowDecorator = (color: string) => {
+  return `
+    <svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="0,0 12,6 0,12" fill="${color}" />
+    </svg>
+  `;
+};
+
+// Add arrows along a polyline
+function addArrowsToLine(
+  map: L.Map,
+  pathCoords: L.LatLngExpression[],
+  color: string,
+  arrowsGroup: L.LayerGroup
+) {
+  if (pathCoords.length < 2) return;
+
+  for (let i = 0; i < pathCoords.length - 1; i++) {
+    const start = pathCoords[i] as [number, number];
+    const end = pathCoords[i + 1] as [number, number];
+
+    // Calculate midpoint
+    const midLat = (start[0] + end[0]) / 2;
+    const midLng = (start[1] + end[1]) / 2;
+
+    // Calculate angle
+    const angle = Math.atan2(end[0] - start[0], end[1] - start[1]) * (180 / Math.PI);
+
+    // Create arrow icon
+    const arrowIcon = L.divIcon({
+      html: `<div style="transform: rotate(${90 - angle}deg); display: flex; align-items: center; justify-content: center;">
+        ${createArrowDecorator(color)}
+      </div>`,
+      className: 'arrow-icon',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+
+    const arrowMarker = L.marker([midLat, midLng], { icon: arrowIcon, interactive: false });
+    arrowsGroup.addLayer(arrowMarker);
+  }
+}
+
 export function TravelMap({ locations, optimizationResult, showOptimized, className }: TravelMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const originalLineRef = useRef<L.Polyline | null>(null);
   const optimizedLineRef = useRef<L.Polyline | null>(null);
+  const arrowsGroupRef = useRef<L.LayerGroup | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   // Initialize map
@@ -35,6 +80,9 @@ export function TravelMap({ locations, optimizationResult, showOptimized, classN
     }).addTo(map.current);
 
     L.control.zoom({ position: 'topright' }).addTo(map.current);
+
+    // Create arrows layer group
+    arrowsGroupRef.current = L.layerGroup().addTo(map.current);
 
     setMapReady(true);
 
@@ -57,6 +105,9 @@ export function TravelMap({ locations, optimizationResult, showOptimized, classN
     optimizedLineRef.current?.remove();
     originalLineRef.current = null;
     optimizedLineRef.current = null;
+
+    // Clear arrows
+    arrowsGroupRef.current?.clearLayers();
 
     if (locations.length === 0) return;
 
@@ -101,23 +152,36 @@ export function TravelMap({ locations, optimizationResult, showOptimized, classN
         return coords;
       };
 
+      const originalColor = 'hsl(0, 75%, 55%)';
+      const optimizedColor = 'hsl(160, 85%, 40%)';
+
       // Original route (red, dashed)
       const originalPath = createPath(optimizationResult.originalRoute.path);
       originalLineRef.current = L.polyline(originalPath, {
-        color: 'hsl(0, 75%, 55%)',
+        color: originalColor,
         weight: 3,
         opacity: showOptimized ? 0.3 : 0.8,
         dashArray: '10, 10',
       }).addTo(map.current);
 
+      // Add arrows to original route (only if not showing optimized)
+      if (!showOptimized && arrowsGroupRef.current) {
+        addArrowsToLine(map.current, originalPath, originalColor, arrowsGroupRef.current);
+      }
+
       // Optimized route (green, solid)
       if (showOptimized) {
         const optimizedPath = createPath(optimizationResult.optimizedRoute.path);
         optimizedLineRef.current = L.polyline(optimizedPath, {
-          color: 'hsl(160, 85%, 40%)',
+          color: optimizedColor,
           weight: 4,
           opacity: 0.9,
         }).addTo(map.current);
+
+        // Add arrows to optimized route
+        if (arrowsGroupRef.current) {
+          addArrowsToLine(map.current, optimizedPath, optimizedColor, arrowsGroupRef.current);
+        }
       }
     }
 

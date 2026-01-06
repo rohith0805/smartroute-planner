@@ -6,7 +6,7 @@ export interface Location {
   address?: string;
 }
 
-export type VehicleType = 'car' | 'bike';
+export type VehicleType = 'car' | 'bike' | 'truck';
 
 export interface RouteResult {
   path: number[];
@@ -26,6 +26,7 @@ export interface OptimizationResult {
 export const VEHICLE_SPEEDS: Record<VehicleType, number> = {
   car: 45, // Average city speed
   bike: 25,
+  truck: 35, // Big vehicles move slower
 };
 
 // Calculate distance between two points using Haversine formula
