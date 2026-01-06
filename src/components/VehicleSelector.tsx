@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { Car, Bike } from 'lucide-react';
+import { Car, Bike, Truck } from 'lucide-react';
 import { VehicleType } from '@/lib/tsp';
 import { motion } from 'framer-motion';
 
@@ -21,6 +21,12 @@ const vehicles: { type: VehicleType; label: string; icon: React.ElementType; des
     label: 'Bike',
     icon: Bike,
     description: 'All roads accessible',
+  },
+  {
+    type: 'truck',
+    label: 'Big Vehicle',
+    icon: Truck,
+    description: 'Main roads only',
   },
 ];
 
