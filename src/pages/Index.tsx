@@ -1,16 +1,28 @@
 import React, { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Location, VehicleType, OptimizationResult, solveTSP } from '@/lib/tsp';
 import { SAMPLE_LOCATIONS } from '@/lib/geocoding';
 import { TravelMap } from '@/components/TravelMap';
 import { LocationInput } from '@/components/LocationInput';
 import { VehicleSelector } from '@/components/VehicleSelector';
 import { RouteComparison } from '@/components/RouteComparison';
+import { SaveTripDialog } from '@/components/SaveTripDialog';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Route, Sparkles, RotateCcw, Loader2, Navigation } from 'lucide-react';
+import { MapPin, Route, Sparkles, RotateCcw, Loader2, Navigation, User, FolderOpen, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [locations, setLocations] = useState<Location[]>([]);
   const [vehicleType, setVehicleType] = useState<VehicleType>('car');
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
@@ -53,6 +65,11 @@ const Index = () => {
     toast.success('Sample locations loaded');
   };
 
+  const handleSignOut = async () => {
+    await signOut();
+    toast.success('Signed out successfully');
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -68,15 +85,44 @@ const Index = () => {
                 <p className="text-xs text-muted-foreground">TSP Route Optimization</p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLoadSample}
-              className="hidden sm:flex"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Load Sample
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLoadSample}
+                className="hidden sm:flex"
+              >
+                <MapPin className="w-4 h-4 mr-2" />
+                Load Sample
+              </Button>
+              
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <User className="w-4 h-4" />
+                      <span className="hidden sm:inline">{user.email?.split('@')[0]}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => navigate('/saved-trips')}>
+                      <FolderOpen className="w-4 h-4 mr-2" />
+                      Saved Trips
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleSignOut}>
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => navigate('/auth')}>
+                  <User className="w-4 h-4 mr-2" />
+                  Sign In
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -170,9 +216,16 @@ const Index = () => {
                   exit={{ opacity: 0, y: -20 }}
                   className="p-5 bg-card border border-border rounded-2xl shadow-md"
                 >
-                  <div className="flex items-center gap-2 mb-4">
-                    <Sparkles className="w-5 h-5 text-accent" />
-                    <h2 className="font-semibold text-foreground">Route Comparison</h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-accent" />
+                      <h2 className="font-semibold text-foreground">Route Comparison</h2>
+                    </div>
+                    <SaveTripDialog
+                      locations={locations}
+                      vehicleType={vehicleType}
+                      optimizationResult={optimizationResult}
+                    />
                   </div>
                   <RouteComparison
                     result={optimizationResult}

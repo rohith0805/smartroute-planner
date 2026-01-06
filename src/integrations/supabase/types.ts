@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      saved_trips: {
+        Row: {
+          created_at: string
+          id: string
+          locations: Json
+          name: string
+          optimized_distance: number
+          optimized_time: number
+          original_distance: number
+          original_time: number
+          savings_percentage: number
+          user_id: string
+          vehicle_type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          locations: Json
+          name: string
+          optimized_distance: number
+          optimized_time: number
+          original_distance: number
+          original_time: number
+          savings_percentage: number
+          user_id: string
+          vehicle_type: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          locations?: Json
+          name?: string
+          optimized_distance?: number
+          optimized_time?: number
+          original_distance?: number
+          original_time?: number
+          savings_percentage?: number
+          user_id?: string
+          vehicle_type?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
