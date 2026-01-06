@@ -13,11 +13,18 @@ interface RouteComparisonProps {
 
 export function RouteComparison({ result, locations, showOptimized, onToggleView }: RouteComparisonProps) {
   const getOrderedLocations = (path: number[]) => {
-    return path.map((idx) => locations[idx]);
+    return path
+      .map((idx) => locations[idx])
+      .filter((loc): loc is Location => loc !== undefined);
   };
 
   const originalLocations = getOrderedLocations(result.originalRoute.path);
   const optimizedLocations = getOrderedLocations(result.optimizedRoute.path);
+
+  // Don't render if locations are out of sync with the result
+  if (originalLocations.length === 0 || optimizedLocations.length === 0) {
+    return null;
+  }
 
   return (
     <motion.div
