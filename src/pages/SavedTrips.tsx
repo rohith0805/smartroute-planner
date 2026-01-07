@@ -70,19 +70,27 @@ const SavedTrips = () => {
   };
 
   const handleLoadTrip = (trip: SavedTrip) => {
+    // Ensure locations is a valid array
+    const locations = Array.isArray(trip.locations) ? trip.locations : [];
+    
+    if (locations.length === 0) {
+      toast.error('This trip has no valid locations');
+      return;
+    }
+
     navigate('/', { 
       state: { 
         loadedTrip: {
-          locations: trip.locations,
+          locations: locations,
           vehicleType: trip.vehicle_type,
           optimizationResult: {
             originalRoute: {
-              order: trip.locations.map((_: any, i: number) => i),
+              order: locations.map((_: any, i: number) => i),
               totalDistance: trip.original_distance,
               estimatedTime: trip.original_time,
             },
             optimizedRoute: {
-              order: trip.locations.map((_: any, i: number) => i),
+              order: locations.map((_: any, i: number) => i),
               totalDistance: trip.optimized_distance,
               estimatedTime: trip.optimized_time,
             },
@@ -178,7 +186,7 @@ const SavedTrips = () => {
                   <CardContent className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <MapPin className="w-4 h-4" />
-                      <span>{trip.locations.length} destinations</span>
+                      <span>{Array.isArray(trip.locations) ? trip.locations.length : 0} destinations</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Route className="w-4 h-4" />
