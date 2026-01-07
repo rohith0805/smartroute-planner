@@ -78,6 +78,10 @@ const SavedTrips = () => {
       return;
     }
 
+    // Calculate savings values
+    const savingsDistance = trip.original_distance - trip.optimized_distance;
+    const savingsTime = trip.original_time - trip.optimized_time;
+
     navigate('/', { 
       state: { 
         loadedTrip: {
@@ -85,15 +89,17 @@ const SavedTrips = () => {
           vehicleType: trip.vehicle_type,
           optimizationResult: {
             originalRoute: {
-              order: locations.map((_: any, i: number) => i),
+              path: locations.map((_: any, i: number) => i),
               totalDistance: trip.original_distance,
               estimatedTime: trip.original_time,
             },
             optimizedRoute: {
-              order: locations.map((_: any, i: number) => i),
+              path: locations.map((_: any, i: number) => i),
               totalDistance: trip.optimized_distance,
               estimatedTime: trip.optimized_time,
             },
+            savingsDistance: Math.max(0, savingsDistance),
+            savingsTime: Math.max(0, savingsTime),
             savingsPercentage: trip.savings_percentage,
           }
         }
