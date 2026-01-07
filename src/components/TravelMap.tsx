@@ -37,12 +37,19 @@ function addArrowsToLine(
     const midLat = (start[0] + end[0]) / 2;
     const midLng = (start[1] + end[1]) / 2;
 
-    // Calculate angle
-    const angle = Math.atan2(end[0] - start[0], end[1] - start[1]) * (180 / Math.PI);
+    // Calculate angle - atan2(deltaLng, deltaLat) gives angle from north
+    // We need to convert to CSS rotation where 0deg points right (east)
+    const deltaLat = end[0] - start[0];
+    const deltaLng = end[1] - start[1];
+    // atan2 returns angle in radians, convert to degrees
+    // The arrow SVG points right (east), so we calculate angle from east
+    const angle = Math.atan2(deltaLat, deltaLng) * (180 / Math.PI);
+    // Rotate: 0 = east, 90 = north, so we need to negate and offset
+    const rotation = -angle;
 
     // Create arrow icon
     const arrowIcon = L.divIcon({
-      html: `<div style="transform: rotate(${90 - angle}deg); display: flex; align-items: center; justify-content: center;">
+      html: `<div style="transform: rotate(${rotation}deg); display: flex; align-items: center; justify-content: center;">
         ${createArrowDecorator(color)}
       </div>`,
       className: 'arrow-icon',
