@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Location, VehicleType, OptimizationResult, solveTSP } from '@/lib/tsp';
 import { SAMPLE_LOCATIONS } from '@/lib/geocoding';
 import { TravelMap } from '@/components/TravelMap';
@@ -22,12 +22,26 @@ import {
 
 const Index = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, signOut } = useAuth();
   const [locations, setLocations] = useState<Location[]>([]);
   const [vehicleType, setVehicleType] = useState<VehicleType>('car');
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [showOptimized, setShowOptimized] = useState(true);
   const [isOptimizing, setIsOptimizing] = useState(false);
+
+  // Load trip from navigation state
+  useEffect(() => {
+    const state = location.state as { loadedTrip?: { locations: Location[]; vehicleType: VehicleType; optimizationResult: OptimizationResult } } | null;
+    if (state?.loadedTrip) {
+      setLocations(state.loadedTrip.locations);
+      setVehicleType(state.loadedTrip.vehicleType);
+      setOptimizationResult(state.loadedTrip.optimizationResult);
+      setShowOptimized(true);
+      // Clear the state to prevent reloading on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   const handleOptimize = useCallback(async () => {
     if (locations.length < 2) {

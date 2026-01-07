@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Navigation, ArrowLeft, Trash2, MapPin, Clock, Route, Loader2 } from 'lucide-react';
+import { Navigation, ArrowLeft, Trash2, MapPin, Clock, Route, Loader2, Play } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { formatDistance, formatTime } from '@/lib/tsp';
@@ -67,6 +67,31 @@ const SavedTrips = () => {
       setTrips(trips.filter((t) => t.id !== id));
       toast.success('Trip deleted');
     }
+  };
+
+  const handleLoadTrip = (trip: SavedTrip) => {
+    navigate('/', { 
+      state: { 
+        loadedTrip: {
+          locations: trip.locations,
+          vehicleType: trip.vehicle_type,
+          optimizationResult: {
+            originalRoute: {
+              order: trip.locations.map((_: any, i: number) => i),
+              totalDistance: trip.original_distance,
+              estimatedTime: trip.original_time,
+            },
+            optimizedRoute: {
+              order: trip.locations.map((_: any, i: number) => i),
+              totalDistance: trip.optimized_distance,
+              estimatedTime: trip.optimized_time,
+            },
+            savingsPercentage: trip.savings_percentage,
+          }
+        }
+      } 
+    });
+    toast.success(`Loading "${trip.name}"`);
   };
 
   if (authLoading || loading) {
@@ -170,6 +195,14 @@ const SavedTrips = () => {
                         </span>
                       </div>
                     )}
+                    <Button
+                      onClick={() => handleLoadTrip(trip)}
+                      className="w-full mt-3"
+                      size="sm"
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Load Trip
+                    </Button>
                   </CardContent>
                 </Card>
               </motion.div>
