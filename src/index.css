@@ -199,6 +199,13 @@
 .leaflet-container {
   font-family: inherit !important;
   @apply rounded-xl;
+  z-index: 1 !important;
+}
+
+/* Ensure dialogs appear above map */
+[data-radix-dialog-overlay],
+[data-radix-dialog-content] {
+  z-index: 100 !important;
 }
 
 .leaflet-control-zoom {
