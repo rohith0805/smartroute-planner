@@ -7,6 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import SavedTrips from "./pages/SavedTrips";
+import AttendanceDashboard from "./pages/AttendanceDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -19,7 +20,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Index />} />
+            <Route path="/" element={<AttendanceDashboard />} />
+            <Route path="/trips" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/saved-trips" element={<SavedTrips />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
