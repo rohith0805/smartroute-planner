@@ -14,35 +14,58 @@ serve(async (req) => {
   try {
     const { imageBase64, classId, registeredStudents } = await req.json();
     
-    if (!imageBase64) {
+    console.log('Received imageBase64 length:', imageBase64?.length || 0);
+    console.log('Received imageBase64 prefix:', imageBase64?.substring(0, 100) || 'null');
+    
+    if (!imageBase64 || imageBase64.length < 100) {
       return new Response(
-        JSON.stringify({ error: 'Image is required' }),
+        JSON.stringify({ error: 'Valid image is required. Image data is too small or missing.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Clean and format the image data URL properly
+    // Validate and clean the image data URL
     let imageUrl: string;
-    if (imageBase64.startsWith('data:')) {
-      // Already a data URL - validate and clean it
-      const match = imageBase64.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
-      if (match) {
-        const mimeType = match[1];
-        const base64Data = match[2].replace(/\s/g, ''); // Remove any whitespace
-        imageUrl = `data:${mimeType};base64,${base64Data}`;
-      } else {
-        // Invalid data URL format, try to fix it
-        const base64Data = imageBase64.replace(/^data:.*?;base64,/, '').replace(/\s/g, '');
-        imageUrl = `data:image/jpeg;base64,${base64Data}`;
+    
+    // Check if it's a valid data URL with actual base64 content
+    const dataUrlMatch = imageBase64.match(/^data:(image\/[a-zA-Z+-]+);base64,([A-Za-z0-9+/]+=*)$/);
+    
+    if (dataUrlMatch) {
+      // Valid data URL format
+      const mimeType = dataUrlMatch[1];
+      const base64Data = dataUrlMatch[2];
+      
+      if (base64Data.length < 100) {
+        return new Response(
+          JSON.stringify({ error: 'Image data is too small. Please capture a valid image.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+      
+      imageUrl = `data:${mimeType};base64,${base64Data}`;
+    } else if (imageBase64.startsWith('data:')) {
+      // Has data: prefix but might have issues - try to extract base64
+      const base64Part = imageBase64.replace(/^data:[^;]+;base64,/, '');
+      if (base64Part.length < 100 || base64Part === imageBase64) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid image format. Please try capturing again.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      imageUrl = `data:image/jpeg;base64,${base64Part}`;
     } else {
-      // Raw base64 - clean and add proper prefix
-      const cleanBase64 = imageBase64.replace(/\s/g, '');
-      imageUrl = `data:image/jpeg;base64,${cleanBase64}`;
+      // Raw base64 without prefix
+      if (imageBase64.length < 100) {
+        return new Response(
+          JSON.stringify({ error: 'Image data is too small.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      imageUrl = `data:image/jpeg;base64,${imageBase64}`;
     }
 
-    console.log('Image URL length:', imageUrl.length);
-    console.log('Image URL prefix:', imageUrl.substring(0, 50));
+    console.log('Processed imageUrl length:', imageUrl.length);
+    console.log('Processed imageUrl prefix:', imageUrl.substring(0, 60));
 
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
