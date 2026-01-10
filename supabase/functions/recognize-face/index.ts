@@ -21,6 +21,29 @@ serve(async (req) => {
       );
     }
 
+    // Clean and format the image data URL properly
+    let imageUrl: string;
+    if (imageBase64.startsWith('data:')) {
+      // Already a data URL - validate and clean it
+      const match = imageBase64.match(/^data:(image\/[a-zA-Z+]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const base64Data = match[2].replace(/\s/g, ''); // Remove any whitespace
+        imageUrl = `data:${mimeType};base64,${base64Data}`;
+      } else {
+        // Invalid data URL format, try to fix it
+        const base64Data = imageBase64.replace(/^data:.*?;base64,/, '').replace(/\s/g, '');
+        imageUrl = `data:image/jpeg;base64,${base64Data}`;
+      }
+    } else {
+      // Raw base64 - clean and add proper prefix
+      const cleanBase64 = imageBase64.replace(/\s/g, '');
+      imageUrl = `data:image/jpeg;base64,${cleanBase64}`;
+    }
+
+    console.log('Image URL length:', imageUrl.length);
+    console.log('Image URL prefix:', imageUrl.substring(0, 50));
+
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
@@ -67,21 +90,21 @@ Be honest about confidence levels - if unsure, use lower confidence scores.`;
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Please analyze this image and identify any students for attendance marking.'
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Please analyze this image and identify any students for attendance marking.'
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: imageUrl
+                  }
                 }
-              }
-            ]
-          }
+              ]
+            }
         ],
       }),
     });
