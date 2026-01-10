@@ -49,21 +49,23 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    // Build the prompt with registered students
+    // Build the prompt with registered students including their face images
+    const studentsWithPhotos = registeredStudents?.filter((s: any) => s.face_image_url) || [];
     const studentsInfo = registeredStudents?.map((s: any) => 
-      `Student ID: ${s.student_id}, Name: ${s.name}`
+      `Student ID: ${s.student_id}, Name: ${s.name}${s.face_image_url ? ' (has reference photo)' : ' (no reference photo)'}`
     ).join('\n') || 'No students registered';
 
     const systemPrompt = `You are a face recognition assistant for an attendance system. 
-Your task is to analyze the captured image and identify if any faces match the registered students.
+Your task is to compare faces in the CAPTURED IMAGE against the REFERENCE PHOTOS of registered students.
 
 Registered students in this class:
 ${studentsInfo}
 
 Instructions:
-1. Analyze the image for any human faces
-2. If you detect faces, try to identify them based on facial features
-3. Return a JSON response with the following structure:
+1. First, analyze the CAPTURED IMAGE (the last image) for any human faces
+2. Then compare each detected face against the REFERENCE PHOTOS (the first ${studentsWithPhotos.length} images)
+3. Look for matching facial features: face shape, eyes, nose, mouth, hair, etc.
+4. Return a JSON response with the following structure:
 {
   "detected": true/false,
   "faces_count": number,
@@ -77,8 +79,45 @@ Instructions:
   "message": "Description of what you detected"
 }
 
+IMPORTANT: Only mark a student as recognized if you are reasonably confident the face matches.
 If no face is detected or students cannot be identified, indicate that clearly.
 Be honest about confidence levels - if unsure, use lower confidence scores.`;
+
+    // Build message content with reference photos first, then the captured image
+    const messageContent: any[] = [
+      {
+        type: 'text',
+        text: `I will show you reference photos of registered students, then a captured image. Please identify which students (if any) appear in the captured image.\n\nReference photos of students:`
+      }
+    ];
+
+    // Add reference photos for each student with a face image
+    for (const student of studentsWithPhotos) {
+      messageContent.push({
+        type: 'text',
+        text: `\nStudent: ${student.name} (ID: ${student.student_id})`
+      });
+      messageContent.push({
+        type: 'image_url',
+        image_url: {
+          url: student.face_image_url
+        }
+      });
+    }
+
+    // Add the captured image last
+    messageContent.push({
+      type: 'text',
+      text: '\n\nNow here is the CAPTURED IMAGE to analyze for attendance:'
+    });
+    messageContent.push({
+      type: 'image_url',
+      image_url: {
+        url: imageUrl
+      }
+    });
+
+    console.log('Sending request with', studentsWithPhotos.length, 'reference photos');
 
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
@@ -90,21 +129,7 @@ Be honest about confidence levels - if unsure, use lower confidence scores.`;
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: 'Please analyze this image and identify any students for attendance marking.'
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: imageUrl
-                  }
-                }
-              ]
-            }
+          { role: 'user', content: messageContent }
         ],
       }),
     });
