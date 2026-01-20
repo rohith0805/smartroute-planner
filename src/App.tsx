@@ -20,10 +20,10 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<AttendanceDashboard />} />
-            <Route path="/trips" element={<Index />} />
+            <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/saved-trips" element={<SavedTrips />} />
+            <Route path="/attendance" element={<AttendanceDashboard />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
