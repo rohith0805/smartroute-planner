@@ -44,116 +44,155 @@ serve(async (req) => {
       );
     }
 
-    // Map vehicle type to Google's travel mode
-    const travelMode = vehicleType === 'bike' ? 'bicycling' : 'driving';
+    // Map vehicle type to Routes API travel mode
+    const travelMode = vehicleType === 'bike' ? 'BICYCLE' : 'DRIVE';
     
-    // Build origin, destination, and waypoints
-    const origin = `${locations[0].lat},${locations[0].lng}`;
-    const destination = `${locations[locations.length - 1].lat},${locations[locations.length - 1].lng}`;
-    
-    // If it's a round trip, destination should be the origin
-    const isRoundTrip = true;
-    const finalDestination = isRoundTrip ? origin : destination;
-    
-    // Waypoints (all locations except first for round trip, or except first and last otherwise)
-    const waypointLocations = isRoundTrip 
-      ? locations.slice(1) 
-      : locations.slice(1, -1);
-    
-    const waypoints = waypointLocations
-      .map(loc => `${loc.lat},${loc.lng}`)
-      .join('|');
+    // Build origin and destination
+    const origin = {
+      location: {
+        latLng: {
+          latitude: locations[0].lat,
+          longitude: locations[0].lng
+        }
+      }
+    };
 
-    // Build the API URL
-    let apiUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${finalDestination}&mode=${travelMode}&key=${GOOGLE_MAPS_API_KEY}&departure_time=now`;
-    
-    if (waypoints) {
-      // optimize:true asks Google to reorder waypoints for best route
-      const waypointPrefix = optimize ? 'optimize:true|' : '';
-      apiUrl += `&waypoints=${waypointPrefix}${waypoints}`;
+    // For round trip, destination is the origin
+    const destination = {
+      location: {
+        latLng: {
+          latitude: locations[0].lat,
+          longitude: locations[0].lng
+        }
+      }
+    };
+
+    // Build intermediates (waypoints) - all locations except first
+    const intermediates = locations.slice(1).map(loc => ({
+      location: {
+        latLng: {
+          latitude: loc.lat,
+          longitude: loc.lng
+        }
+      }
+    }));
+
+    // Build the Routes API request body
+    const requestBody: any = {
+      origin,
+      destination,
+      intermediates,
+      travelMode,
+      routingPreference: travelMode === 'DRIVE' ? 'TRAFFIC_AWARE_OPTIMAL' : 'ROUTING_PREFERENCE_UNSPECIFIED',
+      computeAlternativeRoutes: false,
+      languageCode: 'en-US',
+      units: 'METRIC',
+    };
+
+    // Add optimization flag
+    if (optimize && intermediates.length > 0) {
+      requestBody.optimizeWaypointOrder = true;
     }
 
-    // Add traffic model for driving
-    if (travelMode === 'driving') {
-      apiUrl += '&traffic_model=best_guess';
-    }
+    console.log('Calling Google Routes API with', intermediates.length, 'waypoints, optimize:', optimize);
 
-    console.log('Calling Google Directions API...');
-    const response = await fetch(apiUrl);
+    // Use the Routes API
+    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs,routes.optimizedIntermediateWaypointIndex,routes.viewport'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
     const data = await response.json();
 
-    if (data.status !== 'OK') {
-      console.error('Google API error:', data.status, data.error_message);
+    if (data.error) {
+      console.error('Google Routes API error:', data.error.message);
       return new Response(
         JSON.stringify({ 
-          error: `Google Maps API error: ${data.status}`,
-          details: data.error_message 
+          error: `Google Routes API error: ${data.error.status || 'UNKNOWN'}`,
+          details: data.error.message 
         }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (!data.routes || data.routes.length === 0) {
+      console.error('No routes returned from API');
+      return new Response(
+        JSON.stringify({ error: 'No routes found between the locations' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const route = data.routes[0];
     
-    // Calculate totals
-    let totalDistance = 0;
-    let totalDuration = 0;
-    let totalDurationInTraffic = 0;
+    // Parse duration (format: "1234s")
+    const totalDurationSeconds = parseInt(route.duration?.replace('s', '') || '0');
+    const totalDistanceMeters = route.distanceMeters || 0;
 
-    const legs = route.legs.map((leg: any, index: number) => {
-      totalDistance += leg.distance.value;
-      totalDuration += leg.duration.value;
-      if (leg.duration_in_traffic) {
-        totalDurationInTraffic += leg.duration_in_traffic.value;
-      } else {
-        totalDurationInTraffic += leg.duration.value;
-      }
-
+    // Process legs
+    const legs = (route.legs || []).map((leg: any, index: number) => {
+      const legDuration = parseInt(leg.duration?.replace('s', '') || '0');
+      const legDistance = leg.distanceMeters || 0;
+      
       return {
-        startAddress: leg.start_address,
-        endAddress: leg.end_address,
-        distance: leg.distance,
-        duration: leg.duration,
-        durationInTraffic: leg.duration_in_traffic || leg.duration,
-        steps: leg.steps.map((step: any) => ({
-          instruction: step.html_instructions,
-          distance: step.distance,
-          duration: step.duration,
-          polyline: step.polyline.points,
-        })),
+        startAddress: leg.startLocation?.latLng ? 
+          `${leg.startLocation.latLng.latitude.toFixed(4)}, ${leg.startLocation.latLng.longitude.toFixed(4)}` : 
+          'Unknown',
+        endAddress: leg.endLocation?.latLng ? 
+          `${leg.endLocation.latLng.latitude.toFixed(4)}, ${leg.endLocation.latLng.longitude.toFixed(4)}` : 
+          'Unknown',
+        distance: {
+          value: legDistance,
+          text: formatDistance(legDistance),
+        },
+        duration: {
+          value: legDuration,
+          text: formatDuration(legDuration),
+        },
+        durationInTraffic: {
+          value: legDuration,
+          text: formatDuration(legDuration),
+        },
+        polyline: leg.polyline?.encodedPolyline || '',
       };
     });
 
-    // Get waypoint order if optimized
-    const waypointOrder = route.waypoint_order || waypointLocations.map((_, i) => i);
+    // Get optimized waypoint order
+    const waypointOrder = route.optimizedIntermediateWaypointIndex || 
+      intermediates.map((_, i) => i);
 
     const result = {
       success: true,
       route: {
-        overviewPolyline: route.overview_polyline.points,
-        bounds: route.bounds,
+        overviewPolyline: route.polyline?.encodedPolyline || '',
+        bounds: route.viewport || null,
         legs,
         waypointOrder,
         totalDistance: {
-          value: totalDistance,
-          text: formatDistance(totalDistance),
+          value: totalDistanceMeters,
+          text: formatDistance(totalDistanceMeters),
         },
         totalDuration: {
-          value: totalDuration,
-          text: formatDuration(totalDuration),
+          value: totalDurationSeconds,
+          text: formatDuration(totalDurationSeconds),
         },
         totalDurationInTraffic: {
-          value: totalDurationInTraffic,
-          text: formatDuration(totalDurationInTraffic),
+          value: totalDurationSeconds,
+          text: formatDuration(totalDurationSeconds),
         },
-        trafficDelay: totalDurationInTraffic - totalDuration,
+        trafficDelay: 0, // Routes API includes traffic in duration already
       },
     };
 
     console.log('Successfully fetched directions:', {
       distance: result.route.totalDistance.text,
       duration: result.route.totalDuration.text,
-      durationInTraffic: result.route.totalDurationInTraffic.text,
+      waypointOrder: waypointOrder,
     });
 
     return new Response(
