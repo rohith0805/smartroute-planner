@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Route, Sparkles, RotateCcw, Loader2, Navigation, User, FolderOpen, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDirections } from '@/hooks/useDirections';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +31,14 @@ const Index = () => {
   const [showOptimized, setShowOptimized] = useState(true);
   const [isOptimizing, setIsOptimizing] = useState(false);
 
+  const { 
+    isLoading: isLoadingDirections, 
+    directions, 
+    optimizedDirections, 
+    getRoutes,
+    clearDirections 
+  } = useDirections();
+
   // Load trip from navigation state
   useEffect(() => {
     const state = location.state as { loadedTrip?: { locations: Location[]; vehicleType: VehicleType; optimizationResult: OptimizationResult } } | null;
@@ -38,7 +47,6 @@ const Index = () => {
       setVehicleType(state.loadedTrip.vehicleType);
       setOptimizationResult(state.loadedTrip.optimizationResult);
       setShowOptimized(true);
-      // Clear the state to prevent reloading on refresh
       window.history.replaceState({}, document.title);
     }
   }, [location.state]);
@@ -51,24 +59,64 @@ const Index = () => {
 
     setIsOptimizing(true);
     
-    // Simulate processing time for UX
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      // Fetch live directions from Google Maps
+      const { original, optimized } = await getRoutes(locations, vehicleType);
+      
+      if (original && optimized) {
+        // Calculate savings from live data
+        const savingsDistance = (original.totalDistance.value - optimized.totalDistance.value) / 1000; // km
+        const savingsTime = (original.totalDuration.value - optimized.totalDuration.value) / 60; // minutes
+        const savingsPercentage = (savingsDistance / (original.totalDistance.value / 1000)) * 100;
 
-    const result = solveTSP(locations, vehicleType);
-    setOptimizationResult(result);
-    setShowOptimized(true);
-    setIsOptimizing(false);
+        // Create optimization result with live data
+        const liveResult: OptimizationResult = {
+          originalRoute: {
+            path: locations.map((_, i) => i),
+            totalDistance: original.totalDistance.value / 1000, // Convert to km
+            estimatedTime: original.totalDurationInTraffic.value / 60, // Convert to minutes
+          },
+          optimizedRoute: {
+            path: [0, ...optimized.waypointOrder.map(i => i + 1)],
+            totalDistance: optimized.totalDistance.value / 1000,
+            estimatedTime: optimized.totalDurationInTraffic.value / 60,
+          },
+          savingsDistance: Math.max(0, savingsDistance),
+          savingsTime: Math.max(0, savingsTime),
+          savingsPercentage: Math.max(0, savingsPercentage),
+        };
 
-    if (result && result.savingsPercentage > 0) {
-      toast.success(`Route optimized! Save ${result.savingsPercentage.toFixed(1)}% travel distance`);
-    } else if (result) {
-      toast.info('Your route is already optimally ordered!');
+        setOptimizationResult(liveResult);
+        setShowOptimized(true);
+
+        if (savingsPercentage > 0) {
+          toast.success(`Route optimized! Save ${savingsPercentage.toFixed(1)}% travel distance with live traffic data`);
+        } else {
+          toast.info('Your route is already optimal based on current traffic!');
+        }
+      } else {
+        // Fallback to TSP calculation if API fails
+        const result = solveTSP(locations, vehicleType);
+        setOptimizationResult(result);
+        setShowOptimized(true);
+        toast.info('Using estimated route (live data unavailable)');
+      }
+    } catch (error) {
+      console.error('Optimization error:', error);
+      // Fallback to TSP
+      const result = solveTSP(locations, vehicleType);
+      setOptimizationResult(result);
+      setShowOptimized(true);
+      toast.warning('Using estimated route - live traffic unavailable');
+    } finally {
+      setIsOptimizing(false);
     }
-  }, [locations, vehicleType]);
+  }, [locations, vehicleType, getRoutes]);
 
   const handleReset = () => {
     setLocations([]);
     setOptimizationResult(null);
+    clearDirections();
     setShowOptimized(true);
     toast.info('All destinations cleared');
   };
@@ -76,6 +124,7 @@ const Index = () => {
   const handleLoadSample = () => {
     setLocations(SAMPLE_LOCATIONS);
     setOptimizationResult(null);
+    clearDirections();
     toast.success('Sample locations loaded');
   };
 
@@ -83,6 +132,8 @@ const Index = () => {
     await signOut();
     toast.success('Signed out successfully');
   };
+
+  const isLoading = isOptimizing || isLoadingDirections;
 
   return (
     <div className="min-h-screen bg-background">
@@ -96,7 +147,7 @@ const Index = () => {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-foreground">Smart Travel Planner</h1>
-                <p className="text-xs text-muted-foreground">TSP Route Optimization</p>
+                <p className="text-xs text-muted-foreground">Live Route Optimization</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -195,18 +246,18 @@ const Index = () => {
             >
               <Button
                 onClick={handleOptimize}
-                disabled={locations.length < 2 || isOptimizing}
+                disabled={locations.length < 2 || isLoading}
                 className="flex-1 h-12 bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground font-semibold shadow-lg shadow-accent/20"
               >
-                {isOptimizing ? (
+                {isLoading ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Optimizing...
+                    {isLoadingDirections ? 'Getting live routes...' : 'Optimizing...'}
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 mr-2" />
-                    Optimize Route
+                    Get Live Route
                   </>
                 )}
               </Button>
@@ -234,6 +285,11 @@ const Index = () => {
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-accent" />
                       <h2 className="font-semibold text-foreground">Route Comparison</h2>
+                      {directions && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+                          Live
+                        </span>
+                      )}
                     </div>
                     <SaveTripDialog
                       locations={locations}
@@ -263,6 +319,8 @@ const Index = () => {
               locations={locations}
               optimizationResult={optimizationResult}
               showOptimized={showOptimized}
+              directions={directions}
+              optimizedDirections={optimizedDirections}
             />
             
             {/* Empty State Overlay */}
@@ -278,7 +336,7 @@ const Index = () => {
                   </div>
                   <h3 className="text-xl font-bold text-foreground mb-2">Plan Your Journey</h3>
                   <p className="text-muted-foreground max-w-xs">
-                    Add destinations to visualize your route and find the most efficient path
+                    Add destinations to get live routes with real-time traffic data
                   </p>
                 </motion.div>
               </div>
