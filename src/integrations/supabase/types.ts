@@ -14,75 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      attendance_records: {
-        Row: {
-          class_id: string
-          confidence_score: number | null
-          created_at: string
-          id: string
-          marked_at: string
-          status: Database["public"]["Enums"]["attendance_status"]
-          student_id: string
-        }
-        Insert: {
-          class_id: string
-          confidence_score?: number | null
-          created_at?: string
-          id?: string
-          marked_at?: string
-          status?: Database["public"]["Enums"]["attendance_status"]
-          student_id: string
-        }
-        Update: {
-          class_id?: string
-          confidence_score?: number | null
-          created_at?: string
-          id?: string
-          marked_at?: string
-          status?: Database["public"]["Enums"]["attendance_status"]
-          student_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "attendance_records_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "attendance_records_student_id_fkey"
-            columns: ["student_id"]
-            isOneToOne: false
-            referencedRelation: "students"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      classes: {
-        Row: {
-          created_at: string
-          description: string | null
-          id: string
-          name: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          description?: string | null
-          id?: string
-          name: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          description?: string | null
-          id?: string
-          name?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       saved_trips: {
         Row: {
           created_at: string
@@ -125,50 +56,6 @@ export type Database = {
         }
         Relationships: []
       }
-      students: {
-        Row: {
-          class_id: string | null
-          created_at: string
-          email: string | null
-          face_encoding: string | null
-          face_image_url: string | null
-          id: string
-          name: string
-          student_id: string
-          updated_at: string
-        }
-        Insert: {
-          class_id?: string | null
-          created_at?: string
-          email?: string | null
-          face_encoding?: string | null
-          face_image_url?: string | null
-          id?: string
-          name: string
-          student_id: string
-          updated_at?: string
-        }
-        Update: {
-          class_id?: string | null
-          created_at?: string
-          email?: string | null
-          face_encoding?: string | null
-          face_image_url?: string | null
-          id?: string
-          name?: string
-          student_id?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "students_class_id_fkey"
-            columns: ["class_id"]
-            isOneToOne: false
-            referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -177,7 +64,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      attendance_status: "present" | "absent" | "late"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -304,8 +191,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      attendance_status: ["present", "absent", "late"],
-    },
+    Enums: {},
   },
 } as const
