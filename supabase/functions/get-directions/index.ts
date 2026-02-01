@@ -109,22 +109,30 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    if (data.error) {
-      console.error('Google Routes API error:', data.error.message);
+    // IMPORTANT: return HTTP 200 for upstream API errors so the frontend can
+    // gracefully fall back without Supabase treating this as a transport error.
+    if (data?.error) {
+      const status = String(data.error.status || 'UNKNOWN');
+      const message = String(data.error.message || 'Unknown error');
+
+      console.error('Google Routes API error:', message);
+
       return new Response(
-        JSON.stringify({ 
-          error: `Google Routes API error: ${data.error.status || 'UNKNOWN'}`,
-          details: data.error.message 
+        JSON.stringify({
+          success: false,
+          error: `Google Routes API error: ${status}`,
+          details: message,
+          code: status,
         }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     if (!data.routes || data.routes.length === 0) {
       console.error('No routes returned from API');
       return new Response(
-        JSON.stringify({ error: 'No routes found between the locations' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, error: 'No routes found between the locations' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
