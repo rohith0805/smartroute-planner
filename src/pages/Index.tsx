@@ -100,19 +100,23 @@ const Index = () => {
         }
       } else {
         // Fallback to TSP calculation if API fails
+        const tspStart = performance.now();
         const result = solveTSP(locations, vehicleType);
+        const tspTime = performance.now() - tspStart;
         setOptimizationResult(result);
         setShowOptimized(true);
-        setOptimizationTimeMs(performance.now() - startTime);
+        setOptimizationTimeMs(tspTime);
         toast.info('Using estimated route (live data unavailable)');
       }
     } catch (error) {
       console.error('Optimization error:', error);
       // Fallback to TSP
+      const tspStart = performance.now();
       const result = solveTSP(locations, vehicleType);
+      const tspTime = performance.now() - tspStart;
       setOptimizationResult(result);
       setShowOptimized(true);
-      setOptimizationTimeMs(performance.now() - startTime);
+      setOptimizationTimeMs(tspTime);
       toast.warning('Using estimated route - live traffic unavailable');
     } finally {
       setIsOptimizing(false);
