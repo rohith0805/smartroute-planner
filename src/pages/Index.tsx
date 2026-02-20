@@ -30,6 +30,7 @@ const Index = () => {
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [showOptimized, setShowOptimized] = useState(true);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizationTimeMs, setOptimizationTimeMs] = useState<number | null>(null);
 
   const { 
     isLoading: isLoadingDirections, 
@@ -58,6 +59,8 @@ const Index = () => {
     }
 
     setIsOptimizing(true);
+    setOptimizationTimeMs(null);
+    const startTime = performance.now();
     
     try {
       // Fetch live directions from Google Maps
@@ -88,6 +91,7 @@ const Index = () => {
 
         setOptimizationResult(liveResult);
         setShowOptimized(true);
+        setOptimizationTimeMs(performance.now() - startTime);
 
         if (savingsPercentage > 0) {
           toast.success(`Route optimized! Save ${savingsPercentage.toFixed(1)}% travel distance with live traffic data`);
@@ -99,6 +103,7 @@ const Index = () => {
         const result = solveTSP(locations, vehicleType);
         setOptimizationResult(result);
         setShowOptimized(true);
+        setOptimizationTimeMs(performance.now() - startTime);
         toast.info('Using estimated route (live data unavailable)');
       }
     } catch (error) {
@@ -107,6 +112,7 @@ const Index = () => {
       const result = solveTSP(locations, vehicleType);
       setOptimizationResult(result);
       setShowOptimized(true);
+      setOptimizationTimeMs(performance.now() - startTime);
       toast.warning('Using estimated route - live traffic unavailable');
     } finally {
       setIsOptimizing(false);
@@ -302,6 +308,7 @@ const Index = () => {
                     locations={locations}
                     showOptimized={showOptimized}
                     onToggleView={setShowOptimized}
+                    optimizationTimeMs={optimizationTimeMs}
                   />
                 </motion.section>
               )}

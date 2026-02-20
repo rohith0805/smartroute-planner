@@ -1,7 +1,7 @@
 import React from 'react';
 import { OptimizationResult, formatDistance, formatTime, Location } from '@/lib/tsp';
 import { motion } from 'framer-motion';
-import { TrendingDown, Clock, Route, ArrowRight, Sparkles } from 'lucide-react';
+import { TrendingDown, Clock, Route, ArrowRight, Sparkles, Zap, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface RouteComparisonProps {
@@ -9,9 +9,10 @@ interface RouteComparisonProps {
   locations: Location[];
   showOptimized: boolean;
   onToggleView: (optimized: boolean) => void;
+  optimizationTimeMs?: number | null;
 }
 
-export function RouteComparison({ result, locations, showOptimized, onToggleView }: RouteComparisonProps) {
+export function RouteComparison({ result, locations, showOptimized, onToggleView, optimizationTimeMs }: RouteComparisonProps) {
   const getOrderedLocations = (path: number[]) => {
     return path
       .map((idx) => locations[idx])
@@ -150,7 +151,44 @@ export function RouteComparison({ result, locations, showOptimized, onToggleView
         </motion.div>
       )}
 
-      {/* Route Order */}
+      {/* Optimization Time */}
+      {optimizationTimeMs != null && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-xl bg-muted/50 border border-border"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Timer className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-foreground text-sm">
+                Optimization Time
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {locations.length} destinations optimized in{' '}
+                <span className="font-bold text-primary">
+                  {optimizationTimeMs < 1000
+                    ? `${optimizationTimeMs.toFixed(1)} ms`
+                    : `${(optimizationTimeMs / 1000).toFixed(2)} s`}
+                </span>
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-primary">
+                {optimizationTimeMs < 1000
+                  ? `${optimizationTimeMs.toFixed(0)}ms`
+                  : `${(optimizationTimeMs / 1000).toFixed(1)}s`}
+              </p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                {locations.length <= 8 ? 'Brute Force' : 'NN + 2-Opt'}
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <div className="space-y-3">
         <p className="text-sm font-semibold text-foreground">
           {showOptimized ? 'Optimized' : 'Original'} Route Order
