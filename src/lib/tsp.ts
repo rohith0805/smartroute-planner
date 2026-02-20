@@ -29,6 +29,9 @@ export const VEHICLE_SPEEDS: Record<VehicleType, number> = {
   truck: 35, // Big vehicles move slower
 };
 
+// Road distance correction factor: real road distance is typically 1.3-1.4x straight-line distance
+const ROAD_CORRECTION_FACTOR = 1.35;
+
 // Calculate distance between two points using Haversine formula
 export function calculateDistance(
   lat1: number,
@@ -219,7 +222,8 @@ export function solveTSP(
 
   // Original route (user input order)
   const originalPath = locations.map((_, idx) => idx);
-  const originalDistance = calculateTotalDistance(originalPath, distanceMatrix);
+  const originalDistanceRaw = calculateTotalDistance(originalPath, distanceMatrix);
+  const originalDistance = originalDistanceRaw * ROAD_CORRECTION_FACTOR;
   const originalTime = (originalDistance / speed) * 60; // Convert to minutes
 
   let optimizedPath: number[];
@@ -245,7 +249,8 @@ export function solveTSP(
     optimizedPath = twoOptOptimization(bestPath, distanceMatrix);
   }
 
-  const optimizedDistance = calculateTotalDistance(optimizedPath, distanceMatrix);
+  const optimizedDistanceRaw = calculateTotalDistance(optimizedPath, distanceMatrix);
+  const optimizedDistance = optimizedDistanceRaw * ROAD_CORRECTION_FACTOR;
   const optimizedTime = (optimizedDistance / speed) * 60;
 
   const savingsDistance = originalDistance - optimizedDistance;
