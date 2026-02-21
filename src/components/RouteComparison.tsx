@@ -155,6 +155,34 @@ export function RouteComparison({ result, locations, showOptimized, onToggleView
         </motion.div>
       )}
 
+      {/* Algorithm Explanation */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
+      >
+        <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1.5 flex items-center gap-1.5">
+          <Zap className="w-3.5 h-3.5" />
+          How Optimized Time Works
+        </p>
+        <p className="text-[11px] text-blue-600 dark:text-blue-400 leading-relaxed">
+          {locations.length <= 8 ? (
+            <>
+              With <strong>≤ 8 destinations</strong>, we use <strong>Brute Force</strong> — every possible route is checked to guarantee the absolute shortest path. The optimized time will always increase as you add more stops.
+            </>
+          ) : (
+            <>
+              With <strong>{locations.length} destinations</strong>, we use the <strong>Nearest Neighbor + 2-Opt heuristic</strong> (checking all permutations would take too long). This finds a <em>near-optimal</em> route but is <strong>not guaranteed</strong> to be the absolute best. Occasionally, adding a destination can produce a shorter optimized route if the heuristic happens to find a better arrangement — this is normal behavior for heuristic algorithms.
+            </>
+          )}
+        </p>
+        <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800">
+          <p className="text-[10px] text-blue-500 dark:text-blue-500">
+            <strong>≤ 8 stops:</strong> Brute Force (100% optimal) · <strong>9+ stops:</strong> NN + 2-Opt (near-optimal, fast)
+          </p>
+        </div>
+      </motion.div>
+
       {/* Optimization Time */}
       {optimizationTimeMs != null && (
         <motion.div
