@@ -1,7 +1,7 @@
 import React from 'react';
-import { OptimizationResult, formatDistance, formatTime, Location } from '@/lib/tsp';
+import { OptimizationResult, formatDistance, formatTime, Location, LegDetail } from '@/lib/tsp';
 import { motion } from 'framer-motion';
-import { TrendingDown, Clock, Route, ArrowRight, Sparkles, Zap, Timer } from 'lucide-react';
+import { TrendingDown, Clock, Route, ArrowRight, Sparkles, Zap, Timer, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface RouteComparisonProps {
@@ -21,6 +21,10 @@ export function RouteComparison({ result, locations, showOptimized, onToggleView
 
   const originalLocations = getOrderedLocations(result.originalRoute.path);
   const optimizedLocations = getOrderedLocations(result.optimizedRoute.path);
+
+  const currentRoute = showOptimized ? result.optimizedRoute : result.originalRoute;
+  const currentLegs = currentRoute.legs || [];
+  const currentPath = currentRoute.path;
 
   // Don't render if locations are out of sync with the result
   if (originalLocations.length === 0 || optimizedLocations.length === 0) {
@@ -228,6 +232,66 @@ export function RouteComparison({ result, locations, showOptimized, onToggleView
           </div>
         </div>
       </div>
+
+      {/* Per-Leg Breakdown */}
+      {currentLegs.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <MapPin className="w-4 h-4 text-accent" />
+            Leg-by-Leg Breakdown
+          </p>
+          <div className="space-y-2">
+            {currentLegs.map((leg, index) => {
+              const fromName = locations[leg.fromIndex]?.name || `Stop ${leg.fromIndex + 1}`;
+              const toName = leg.toIndex === currentPath[0]
+                ? `${locations[leg.toIndex]?.name || 'Start'} (Return)`
+                : locations[leg.toIndex]?.name || `Stop ${leg.toIndex + 1}`;
+              return (
+                <div
+                  key={index}
+                  className={cn(
+                    'flex items-center justify-between p-3 rounded-lg border text-xs',
+                    showOptimized ? 'bg-accent/5 border-accent/10' : 'bg-muted/50 border-border'
+                  )}
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={cn(
+                      'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
+                      showOptimized ? 'bg-accent text-accent-foreground' : 'bg-primary text-primary-foreground'
+                    )}>
+                      {index + 1}
+                    </span>
+                    <span className="truncate font-medium text-foreground">{fromName}</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span className="truncate font-medium text-foreground">{toName}</span>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-2">
+                    <span className="text-muted-foreground">{formatDistance(leg.distance)}</span>
+                    <span className={cn('font-semibold', showOptimized ? 'text-accent' : 'text-primary')}>
+                      {formatTime(leg.time)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Total summary row */}
+            <div className={cn(
+              'flex items-center justify-between p-3 rounded-lg border-2 text-xs font-bold',
+              showOptimized ? 'bg-accent/10 border-accent/30' : 'bg-primary/10 border-primary/30'
+            )}>
+              <span className="text-foreground">Total ({currentLegs.length} legs + {locations.length - 1} stops)</span>
+              <div className="flex items-center gap-3">
+                <span className="text-muted-foreground">
+                  {formatDistance(currentRoute.totalDistance)}
+                </span>
+                <span className={cn(showOptimized ? 'text-accent' : 'text-primary')}>
+                  {formatTime(currentRoute.estimatedTime)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 }
