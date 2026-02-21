@@ -78,11 +78,13 @@ const Index = () => {
             path: locations.map((_, i) => i),
             totalDistance: original.totalDistance.value / 1000, // Convert to km
             estimatedTime: original.totalDurationInTraffic.value / 60, // Convert to minutes
+            legs: [],
           },
           optimizedRoute: {
             path: [0, ...optimized.waypointOrder.map(i => i + 1)],
             totalDistance: optimized.totalDistance.value / 1000,
             estimatedTime: optimized.totalDurationInTraffic.value / 60,
+            legs: [],
           },
           savingsDistance: Math.max(0, savingsDistance),
           savingsTime: Math.max(0, savingsTime),

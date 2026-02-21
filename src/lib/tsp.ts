@@ -8,10 +8,18 @@ export interface Location {
 
 export type VehicleType = 'car' | 'bike' | 'truck';
 
+export interface LegDetail {
+  fromIndex: number;
+  toIndex: number;
+  distance: number; // km
+  time: number; // minutes
+}
+
 export interface RouteResult {
   path: number[];
   totalDistance: number;
   estimatedTime: number;
+  legs: LegDetail[];
 }
 
 export interface OptimizationResult {
@@ -28,6 +36,9 @@ export const VEHICLE_SPEEDS: Record<VehicleType, number> = {
   bike: 25,
   truck: 35, // Big vehicles move slower
 };
+
+// Time spent at each stop/destination (minutes)
+const STOP_TIME_MINUTES = 5;
 
 // Road distance correction factor: real road distance is typically 1.3-1.4x straight-line distance
 const ROAD_CORRECTION_FACTOR = 1.35;
@@ -220,11 +231,39 @@ export function solveTSP(
   const speed = VEHICLE_SPEEDS[vehicleType];
   const n = locations.length;
 
+  // Helper to compute legs for a path
+  const computeLegs = (path: number[]): LegDetail[] => {
+    const legs: LegDetail[] = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const dist = distanceMatrix[path[i]][path[i + 1]] * ROAD_CORRECTION_FACTOR;
+      legs.push({
+        fromIndex: path[i],
+        toIndex: path[i + 1],
+        distance: dist,
+        time: (dist / speed) * 60,
+      });
+    }
+    // Return to start
+    if (path.length > 1) {
+      const dist = distanceMatrix[path[path.length - 1]][path[0]] * ROAD_CORRECTION_FACTOR;
+      legs.push({
+        fromIndex: path[path.length - 1],
+        toIndex: path[0],
+        distance: dist,
+        time: (dist / speed) * 60,
+      });
+    }
+    return legs;
+  };
+
   // Original route (user input order)
   const originalPath = locations.map((_, idx) => idx);
-  const originalDistanceRaw = calculateTotalDistance(originalPath, distanceMatrix);
-  const originalDistance = originalDistanceRaw * ROAD_CORRECTION_FACTOR;
-  const originalTime = (originalDistance / speed) * 60; // Convert to minutes
+  const originalLegs = computeLegs(originalPath);
+  const originalDistance = originalLegs.reduce((sum, l) => sum + l.distance, 0);
+  const originalDrivingTime = originalLegs.reduce((sum, l) => sum + l.time, 0);
+  // Add stop time: each intermediate destination adds stop time
+  const originalStopTime = (n - 1) * STOP_TIME_MINUTES; // stops at each destination except start
+  const originalTime = originalDrivingTime + originalStopTime;
 
   let optimizedPath: number[];
 
@@ -249,9 +288,11 @@ export function solveTSP(
     optimizedPath = twoOptOptimization(bestPath, distanceMatrix);
   }
 
-  const optimizedDistanceRaw = calculateTotalDistance(optimizedPath, distanceMatrix);
-  const optimizedDistance = optimizedDistanceRaw * ROAD_CORRECTION_FACTOR;
-  const optimizedTime = (optimizedDistance / speed) * 60;
+  const optimizedLegs = computeLegs(optimizedPath);
+  const optimizedDistance = optimizedLegs.reduce((sum, l) => sum + l.distance, 0);
+  const optimizedDrivingTime = optimizedLegs.reduce((sum, l) => sum + l.time, 0);
+  const optimizedStopTime = (n - 1) * STOP_TIME_MINUTES;
+  const optimizedTime = optimizedDrivingTime + optimizedStopTime;
 
   const savingsDistance = originalDistance - optimizedDistance;
   const savingsTime = originalTime - optimizedTime;
@@ -263,11 +304,13 @@ export function solveTSP(
       path: originalPath,
       totalDistance: originalDistance,
       estimatedTime: originalTime,
+      legs: originalLegs,
     },
     optimizedRoute: {
       path: optimizedPath,
       totalDistance: optimizedDistance,
       estimatedTime: optimizedTime,
+      legs: optimizedLegs,
     },
     savingsDistance: Math.max(0, savingsDistance),
     savingsTime: Math.max(0, savingsTime),
