@@ -15,6 +15,65 @@ interface TravelMapProps {
   optimizedDirections?: DirectionsResult | null;
 }
 
+// Helper: create a rotated arrow icon
+function createArrowIcon(color: string, bearing: number): L.DivIcon {
+  return L.divIcon({
+    html: `<svg width="18" height="18" viewBox="0 0 18 18" style="transform:rotate(${bearing}deg)">
+      <polygon points="9,2 15,15 9,11 3,15" fill="${color}" opacity="0.9" stroke="white" stroke-width="1.2"/>
+    </svg>`,
+    className: '',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
+// Calculate bearing between two lat/lng points
+function getBearing(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos((lat2 * Math.PI) / 180);
+  const x =
+    Math.cos((lat1 * Math.PI) / 180) * Math.sin((lat2 * Math.PI) / 180) -
+    Math.sin((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+// Add arrow markers along a polyline path
+function addArrowDecorations(
+  mapInstance: L.Map,
+  path: L.LatLngExpression[],
+  color: string,
+  intervalPx: number = 100
+): L.Marker[] {
+  const markers: L.Marker[] = [];
+  if (path.length < 2) return markers;
+
+  const latLngs = path.map(p => {
+    if (Array.isArray(p)) return L.latLng(p[0] as number, p[1] as number);
+    return L.latLng(p as L.LatLngLiteral);
+  });
+
+  let accumulatedPx = 0;
+  for (let i = 1; i < latLngs.length; i++) {
+    const p1 = mapInstance.latLngToContainerPoint(latLngs[i - 1]);
+    const p2 = mapInstance.latLngToContainerPoint(latLngs[i]);
+    const segLen = p1.distanceTo(p2);
+    accumulatedPx += segLen;
+
+    if (accumulatedPx >= intervalPx) {
+      accumulatedPx = 0;
+      const mid = L.latLng(
+        (latLngs[i - 1].lat + latLngs[i].lat) / 2,
+        (latLngs[i - 1].lng + latLngs[i].lng) / 2
+      );
+      const bearing = getBearing(latLngs[i - 1].lat, latLngs[i - 1].lng, latLngs[i].lat, latLngs[i].lng);
+      const icon = createArrowIcon(color, bearing);
+      const marker = L.marker(mid, { icon, interactive: false }).addTo(mapInstance);
+      markers.push(marker);
+    }
+  }
+  return markers;
+}
+
 export function TravelMap({ 
   locations, 
   optimizationResult, 
@@ -26,6 +85,7 @@ export function TravelMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const arrowMarkersRef = useRef<L.Marker[]>([]);
   const originalLineRef = useRef<L.Polyline | null>(null);
   const optimizedLineRef = useRef<L.Polyline | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -63,6 +123,10 @@ export function TravelMap({
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
+    // Clear arrow markers
+    arrowMarkersRef.current.forEach((m) => m.remove());
+    arrowMarkersRef.current = [];
+
     // Clear existing lines
     originalLineRef.current?.remove();
     optimizedLineRef.current?.remove();
@@ -71,7 +135,7 @@ export function TravelMap({
 
     if (locations.length === 0) return;
 
-    // Determine which locations to show markers for (based on optimized order if available)
+    // Determine display order
     const displayOrder = showOptimized && optimizedDirections?.waypointOrder 
       ? [0, ...optimizedDirections.waypointOrder.map(i => i + 1)]
       : locations.map((_, i) => i);
@@ -119,6 +183,10 @@ export function TravelMap({
           opacity: showOptimized ? 0.3 : 0.9,
           dashArray: showOptimized ? '10, 10' : undefined,
         }).addTo(map.current);
+
+        if (!showOptimized) {
+          arrowMarkersRef.current.push(...addArrowDecorations(map.current, decodedPath, originalColor));
+        }
       }
 
       // Optimized route (green, solid)
@@ -129,6 +197,8 @@ export function TravelMap({
           weight: 5,
           opacity: 0.9,
         }).addTo(map.current);
+
+        arrowMarkersRef.current.push(...addArrowDecorations(map.current, decodedPath, optimizedColor));
       }
     } 
     // Fallback to straight lines if no directions available
@@ -151,6 +221,10 @@ export function TravelMap({
         dashArray: '10, 10',
       }).addTo(map.current);
 
+      if (!showOptimized) {
+        arrowMarkersRef.current.push(...addArrowDecorations(map.current, originalPath, originalColor));
+      }
+
       if (showOptimized) {
         const optimizedPath = createPath(optimizationResult.optimizedRoute.path);
         optimizedLineRef.current = L.polyline(optimizedPath, {
@@ -158,6 +232,8 @@ export function TravelMap({
           weight: 4,
           opacity: 0.9,
         }).addTo(map.current);
+
+        arrowMarkersRef.current.push(...addArrowDecorations(map.current, optimizedPath, optimizedColor));
       }
     }
 
