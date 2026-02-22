@@ -3,7 +3,7 @@ import { Location } from '@/lib/tsp';
 import { searchPlaces } from '@/lib/geocoding';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { MapPin, X, GripVertical, Search, Loader2 } from 'lucide-react';
+import { MapPin, X, GripVertical, Search, Loader2, Flag } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
@@ -55,6 +55,15 @@ export function LocationInput({ locations, onLocationsChange, maxLocations = 10 
 
   const handleRemoveLocation = (id: string) => {
     onLocationsChange(locations.filter((loc) => loc.id !== id));
+  };
+
+  const handleSetAsStart = (id: string) => {
+    const idx = locations.findIndex((loc) => loc.id === id);
+    if (idx <= 0) return;
+    const updated = [...locations];
+    const [item] = updated.splice(idx, 1);
+    updated.unshift(item);
+    onLocationsChange(updated);
   };
 
   const handleReorder = (newOrder: Location[]) => {
@@ -144,11 +153,29 @@ export function LocationInput({ locations, onLocationsChange, maxLocations = 10 
                   {index + 1}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{location.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-sm truncate">{location.name}</p>
+                    {index === 0 && (
+                      <span className="text-[10px] font-semibold bg-accent/15 text-accent px-1.5 py-0.5 rounded-full flex-shrink-0">
+                        START
+                      </span>
+                    )}
+                  </div>
                   {location.address && (
                     <p className="text-xs text-muted-foreground truncate">{location.address}</p>
                   )}
                 </div>
+                {index !== 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleSetAsStart(location.id)}
+                    className="h-8 w-8 text-muted-foreground hover:text-accent hover:bg-accent/10 flex-shrink-0"
+                    title="Set as starting point"
+                  >
+                    <Flag className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
