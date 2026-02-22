@@ -168,6 +168,40 @@ export function twoOptOptimization(
   return bestPath;
 }
 
+// 2-opt optimization with fixed start (index 0 stays in place)
+export function twoOptOptimizationFixedStart(
+  path: number[],
+  distanceMatrix: number[][]
+): number[] {
+  if (path.length < 3) return path;
+
+  let improved = true;
+  let bestPath = [...path];
+  let bestDistance = calculateTotalDistance(bestPath, distanceMatrix);
+
+  while (improved) {
+    improved = false;
+
+    // Start from i=1 to keep index 0 (starting destination) fixed
+    for (let i = 1; i < bestPath.length - 1; i++) {
+      for (let j = i + 1; j < bestPath.length; j++) {
+        const newPath = twoOptSwap(bestPath, i - 1, j);
+        // Ensure start is still 0
+        if (newPath[0] !== path[0]) continue;
+        const newDistance = calculateTotalDistance(newPath, distanceMatrix);
+
+        if (newDistance < bestDistance - 0.0001) {
+          bestPath = newPath;
+          bestDistance = newDistance;
+          improved = true;
+        }
+      }
+    }
+  }
+
+  return bestPath;
+}
+
 // Helper function for 2-opt swap
 function twoOptSwap(path: number[], i: number, j: number): number[] {
   const newPath = path.slice(0, i + 1);
@@ -268,24 +302,23 @@ export function solveTSP(
   let optimizedPath: number[];
 
   // Use brute force for small sets (up to 8 locations), otherwise use heuristics
+  // IMPORTANT: Always keep index 0 as the fixed starting destination
   if (n <= 8) {
     optimizedPath = bruteForceOptimize(distanceMatrix);
   } else {
-    // Try nearest neighbor from multiple starting points and pick the best
-    let bestPath = nearestNeighborTSP(distanceMatrix, 0);
-    let bestDistance = calculateTotalDistance(bestPath, distanceMatrix);
+    // Always start from index 0 (the user's chosen starting point)
+    const initialPath = nearestNeighborTSP(distanceMatrix, 0);
 
-    for (let start = 1; start < Math.min(n, 5); start++) {
-      const path = nearestNeighborTSP(distanceMatrix, start);
-      const distance = calculateTotalDistance(path, distanceMatrix);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestPath = path;
-      }
+    // Apply 2-opt optimization while preserving start
+    optimizedPath = twoOptOptimizationFixedStart(initialPath, distanceMatrix);
+  }
+
+  // Ensure the path always starts from index 0
+  if (optimizedPath[0] !== 0) {
+    const startIdx = optimizedPath.indexOf(0);
+    if (startIdx > 0) {
+      optimizedPath = [...optimizedPath.slice(startIdx), ...optimizedPath.slice(0, startIdx)];
     }
-
-    // Apply 2-opt optimization
-    optimizedPath = twoOptOptimization(bestPath, distanceMatrix);
   }
 
   const optimizedLegs = computeLegs(optimizedPath);
