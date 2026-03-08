@@ -316,22 +316,29 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               <Languages className="w-4 h-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground font-medium">Language:</span>
               <div className="flex gap-1.5">
-                {LANGUAGES.map((lang) => (
-                  <button
-                    key={lang.code}
-                    onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
-                    disabled={isLoading}
-                    className={cn(
-                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
-                      selectedLang === lang.code
-                        ? "bg-violet-500 text-white border-violet-500 shadow-sm"
-                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
-                      isLoading && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {lang.flag} {lang.label}
-                  </button>
-                ))}
+                {LANGUAGES.map((lang) => {
+                  const hasVoice = availableVoiceLangs.has(lang.code);
+                  return (
+                    <button
+                      key={lang.code}
+                      onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
+                      disabled={isLoading}
+                      title={hasVoice ? `${lang.label} text & voice` : `${lang.label} text only (no voice on this device)`}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
+                        selectedLang === lang.code
+                          ? "bg-violet-500 text-white border-violet-500 shadow-sm"
+                          : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
+                        isLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {lang.flag} {lang.label}
+                      {!hasVoice && lang.code !== 'en' && (
+                        <span className="ml-1 text-[9px] opacity-70">📝</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
