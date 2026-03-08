@@ -39,12 +39,25 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     };
   }, []);
 
-  // Pre-load voices
+  // Detect available voice languages
   useEffect(() => {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => {
-      window.speechSynthesis.getVoices();
+    const detectVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const langs = new Set<string>();
+      voices.forEach(v => {
+        if (v.lang.startsWith('en')) langs.add('en');
+        if (v.lang.startsWith('hi')) langs.add('hi');
+        if (v.lang.startsWith('te')) langs.add('te');
+      });
+      if (langs.size === 0) langs.add('en');
+      setAvailableVoiceLangs(langs);
+      console.log('Available TTS voices:', voices.map(v => `${v.name} (${v.lang})`));
+      console.log('Detected voice languages:', [...langs]);
     };
+
+    detectVoices();
+    window.speechSynthesis.onvoiceschanged = detectVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
   const generateNarration = async (lang?: NarratorLanguage) => {
