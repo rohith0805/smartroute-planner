@@ -1,47 +1,98 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Fuel, Zap, IndianRupee, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { Fuel, TrendingDown, ChevronDown, ChevronUp, Loader2, RefreshCw, MapPin } from 'lucide-react';
 import { VehicleType } from '@/lib/tsp';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface FuelCostCalculatorProps {
-  originalDistance: number; // km
-  optimizedDistance: number; // km
+  originalDistance: number;
+  optimizedDistance: number;
   vehicleType: VehicleType;
 }
 
-// Default fuel efficiency (km per liter or km per kWh for EV)
 const DEFAULT_EFFICIENCY: Record<VehicleType, number> = {
-  car: 15,    // 15 km/L
-  bike: 40,   // 40 km/L
-  truck: 8,   // 8 km/L
+  car: 15,
+  bike: 40,
+  truck: 8,
 };
 
-// Default fuel price (₹ per liter)
 const DEFAULT_FUEL_PRICE: Record<VehicleType, number> = {
   car: 105,
   bike: 105,
-  truck: 95,   // diesel
+  truck: 95,
 };
 
-const VEHICLE_FUEL_LABELS: Record<VehicleType, string> = {
-  car: 'Petrol/Diesel',
-  bike: 'Petrol',
-  truck: 'Diesel',
-};
+interface FuelPrices {
+  petrol: number;
+  diesel: number;
+  cng: number;
+  city: string;
+  date: string;
+}
+
+function getFuelPriceForVehicle(prices: FuelPrices | null, vehicleType: VehicleType): number {
+  if (!prices) return DEFAULT_FUEL_PRICE[vehicleType];
+  switch (vehicleType) {
+    case 'car': return prices.petrol;
+    case 'bike': return prices.petrol;
+    case 'truck': return prices.diesel;
+  }
+}
+
+function getFuelLabel(vehicleType: VehicleType): string {
+  switch (vehicleType) {
+    case 'car': return 'Petrol';
+    case 'bike': return 'Petrol';
+    case 'truck': return 'Diesel';
+  }
+}
 
 export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicleType }: FuelCostCalculatorProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [efficiency, setEfficiency] = useState(DEFAULT_EFFICIENCY[vehicleType]);
   const [fuelPrice, setFuelPrice] = useState(DEFAULT_FUEL_PRICE[vehicleType]);
+  const [livePrices, setLivePrices] = useState<FuelPrices | null>(null);
+  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const [city, setCity] = useState('Hyderabad');
+  const [isLive, setIsLive] = useState(false);
 
-  // Update defaults when vehicle type changes
-  React.useEffect(() => {
+  useEffect(() => {
     setEfficiency(DEFAULT_EFFICIENCY[vehicleType]);
-    setFuelPrice(DEFAULT_FUEL_PRICE[vehicleType]);
-  }, [vehicleType]);
+    if (livePrices) {
+      setFuelPrice(getFuelPriceForVehicle(livePrices, vehicleType));
+    } else {
+      setFuelPrice(DEFAULT_FUEL_PRICE[vehicleType]);
+    }
+  }, [vehicleType, livePrices]);
+
+  const fetchLivePrices = async (selectedCity?: string) => {
+    setIsLoadingPrices(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-fuel-prices', {
+        body: { city: selectedCity || city },
+      });
+
+      if (error) throw new Error(error.message);
+      if (!data?.success) throw new Error(data?.error || 'Failed to fetch prices');
+
+      const prices = data.prices as FuelPrices;
+      setLivePrices(prices);
+      setFuelPrice(getFuelPriceForVehicle(prices, vehicleType));
+      setCity(prices.city);
+      setIsLive(true);
+      toast.success(`Live fuel prices loaded for ${prices.city}`);
+    } catch (err) {
+      console.error('Fuel price fetch error:', err);
+      toast.error('Could not fetch live prices, using defaults');
+      setIsLive(false);
+    } finally {
+      setIsLoadingPrices(false);
+    }
+  };
 
   const costs = useMemo(() => {
     const originalFuel = originalDistance / efficiency;
@@ -68,7 +119,7 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
       animate={{ opacity: 1, y: 0 }}
       className="rounded-xl border border-border overflow-hidden"
     >
-      {/* Header - always visible */}
+      {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full p-4 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border-b border-amber-200/50 dark:border-amber-800/50 hover:from-amber-100 hover:to-orange-100 dark:hover:from-amber-950/40 dark:hover:to-orange-950/40 transition-colors"
@@ -78,7 +129,14 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
             <Fuel className="w-5 h-5 text-amber-600 dark:text-amber-400" />
           </div>
           <div className="text-left">
-            <p className="font-semibold text-foreground text-sm">Fuel Cost Estimator</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-foreground text-sm">Fuel Cost Estimator</p>
+              {isLive && (
+                <span className="text-[10px] bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 px-1.5 py-0.5 rounded-full font-medium">
+                  Live
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               {costs.savings > 0
                 ? `Save ₹${costs.savings.toFixed(0)} with optimized route`
@@ -100,19 +158,60 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
         </div>
       </button>
 
-      {/* Expanded content */}
+      {/* Expanded */}
       {isExpanded && (
         <motion.div
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 'auto', opacity: 1 }}
           className="p-4 space-y-4 bg-card"
         >
+          {/* Live price fetch */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">City</Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  type="text"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Enter city name"
+                  className="h-9 text-sm flex-1"
+                />
+                <button
+                  onClick={() => fetchLivePrices()}
+                  disabled={isLoadingPrices || !city.trim()}
+                  className={cn(
+                    "h-9 px-3 rounded-md text-xs font-medium flex items-center gap-1.5 transition-colors border",
+                    isLoadingPrices
+                      ? "bg-muted text-muted-foreground border-border cursor-not-allowed"
+                      : "bg-accent text-accent-foreground border-accent hover:bg-accent/90"
+                  )}
+                >
+                  {isLoadingPrices ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  )}
+                  {isLoadingPrices ? 'Fetching...' : 'Get Live Prices'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Live price display */}
+          {livePrices && (
+            <div className="flex items-center gap-3 p-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-xs">
+              <MapPin className="w-3.5 h-3.5 text-green-600 dark:text-green-400 shrink-0" />
+              <span className="text-green-700 dark:text-green-300">
+                <strong>{livePrices.city}</strong> — Petrol: ₹{livePrices.petrol}/L · Diesel: ₹{livePrices.diesel}/L · CNG: ₹{livePrices.cng}/kg
+              </span>
+            </div>
+          )}
+
           {/* Editable inputs */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs text-muted-foreground">
-                Mileage (km/L)
-              </Label>
+              <Label className="text-xs text-muted-foreground">Mileage (km/L)</Label>
               <Input
                 type="number"
                 min={1}
@@ -125,7 +224,7 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">
-                {VEHICLE_FUEL_LABELS[vehicleType]} Price (₹/L)
+                {getFuelLabel(vehicleType)} Price (₹/L)
               </Label>
               <Input
                 type="number"
@@ -133,7 +232,10 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
                 max={500}
                 step={1}
                 value={fuelPrice}
-                onChange={(e) => setFuelPrice(Number(e.target.value) || 1)}
+                onChange={(e) => {
+                  setFuelPrice(Number(e.target.value) || 1);
+                  setIsLive(false);
+                }}
                 className="mt-1 h-9 text-sm"
               />
             </div>
@@ -153,7 +255,7 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
             </div>
           </div>
 
-          {/* Savings summary */}
+          {/* Savings */}
           {costs.savings > 0 && (
             <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
               <TrendingDown className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
