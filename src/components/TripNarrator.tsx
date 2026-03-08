@@ -96,23 +96,25 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
   const getVoiceForLang = (langCode: NarratorLanguage): SpeechSynthesisVoice | null => {
     const voices = window.speechSynthesis.getVoices();
-    const voiceLang = LANGUAGES.find(l => l.code === langCode)?.voiceLang || 'en';
+    const langTag = langCode === 'te' ? 'te' : langCode === 'hi' ? 'hi' : 'en';
 
-    // Try Google voices first (best quality)
-    const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.startsWith(voiceLang));
-    if (googleVoice) return googleVoice;
+    // Filter voices strictly by language
+    const matchingVoices = voices.filter(v => v.lang.startsWith(langTag + '-') || v.lang === langTag);
 
-    // Then try any matching voice with the country variant
-    const countryVoice = voices.find(v => v.lang.startsWith(voiceLang + '-'));
-    if (countryVoice) return countryVoice;
+    if (matchingVoices.length === 0) return null;
 
-    // Fallback to any matching language
-    const anyVoice = voices.find(v => v.lang.startsWith(voiceLang));
-    if (anyVoice) return anyVoice;
+    // Prefer Google voices
+    const google = matchingVoices.find(v => v.name.toLowerCase().includes('google'));
+    if (google) return google;
 
-    return null;
+    // Then prefer India locale
+    const india = matchingVoices.find(v => v.lang.includes('IN'));
+    if (india) return india;
+
+    return matchingVoices[0];
   };
 
+  // Chrome bug: speechSynthesis stops after ~15s. Workaround: split into chunks.
   const speakNarration = () => {
     if (!narration) return;
 
@@ -129,21 +131,27 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     const sections = narration.split(/^##\s+/gm).filter(Boolean);
     const sectionNames = sections.map(s => s.split('\n')[0].trim());
 
-    const utterance = new SpeechSynthesisUtterance(plainText);
-    utterance.rate = generatedLang === 'en' ? 1.05 : 0.95;
-    utterance.pitch = 1.1;
+    // Split text into sentences to avoid Chrome's ~15s cutoff bug
+    const sentences = plainText.match(/[^.!?।\n]+[.!?।\n]+/g) || [plainText];
+    const chunks: string[] = [];
+    let current = '';
+    for (const sentence of sentences) {
+      if ((current + sentence).length > 200) {
+        if (current) chunks.push(current.trim());
+        current = sentence;
+      } else {
+        current += sentence;
+      }
+    }
+    if (current.trim()) chunks.push(current.trim());
 
     const voice = getVoiceForLang(generatedLang);
-    if (voice) {
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-    } else {
-      // Set lang tag even without a voice match
-      const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
-      utterance.lang = langTag;
-    }
+    const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
 
-    let charIndex = 0;
+    let chunkIndex = 0;
+    let totalCharsSpoken = 0;
+
+    // Compute section offsets for progress tracking
     const sectionOffsets: number[] = [];
     let offset = 0;
     for (const section of sections) {
@@ -151,34 +159,57 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       offset += stripMarkdown(section).length + 1;
     }
 
-    utterance.onboundary = (event) => {
-      if (event.name === 'word') {
-        charIndex = event.charIndex;
-        for (let i = sectionOffsets.length - 1; i >= 0; i--) {
-          if (charIndex >= sectionOffsets[i]) {
-            setCurrentSection(sectionNames[i] || null);
-            break;
+    const speakNextChunk = () => {
+      if (chunkIndex >= chunks.length) {
+        setIsSpeaking(false);
+        setIsPaused(false);
+        setCurrentSection(null);
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+      utterance.rate = generatedLang === 'en' ? 1.05 : 0.95;
+      utterance.pitch = 1.1;
+      utterance.lang = langTag;
+      if (voice) utterance.voice = voice;
+
+      const chunkStartChar = totalCharsSpoken;
+
+      utterance.onboundary = (event) => {
+        if (event.name === 'word') {
+          const globalChar = chunkStartChar + event.charIndex;
+          for (let i = sectionOffsets.length - 1; i >= 0; i--) {
+            if (globalChar >= sectionOffsets[i]) {
+              setCurrentSection(sectionNames[i] || null);
+              break;
+            }
           }
         }
-      }
+      };
+
+      utterance.onend = () => {
+        totalCharsSpoken += chunks[chunkIndex].length + 1;
+        chunkIndex++;
+        speakNextChunk();
+      };
+
+      utterance.onerror = (e) => {
+        // 'interrupted' is normal when user stops; only fail on real errors
+        if (e.error !== 'interrupted' && e.error !== 'canceled') {
+          console.error('Speech error:', e.error);
+          setIsSpeaking(false);
+          setIsPaused(false);
+          setCurrentSection(null);
+        }
+      };
+
+      utteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
     };
 
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setIsPaused(false);
-      setCurrentSection(null);
-    };
-
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setIsPaused(false);
-      setCurrentSection(null);
-    };
-
-    utteranceRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
     setIsSpeaking(true);
     setIsPaused(false);
+    speakNextChunk();
   };
 
   const pauseSpeaking = () => {
