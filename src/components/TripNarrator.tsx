@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, ChevronDown, ChevronUp, Loader2, Radio } from 'lucide-react';
+import { Mic, ChevronDown, ChevronUp, Loader2, Radio, Volume2, VolumeX, Pause, Play } from 'lucide-react';
 import { Location, VehicleType, OptimizationResult } from '@/lib/tsp';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -17,6 +17,16 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [narration, setNarration] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [currentSection, setCurrentSection] = useState<string | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+
+  useEffect(() => {
+    return () => {
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   const generateNarration = async () => {
     setIsLoading(true);
@@ -51,6 +61,97 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     }
   };
 
+  const stripMarkdown = (md: string): string => {
+    return md
+      .replace(/^#{1,3}\s+/gm, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/^- /gm, '')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  };
+
+  const speakNarration = () => {
+    if (!narration) return;
+
+    if (isPaused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+      setIsSpeaking(true);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const plainText = stripMarkdown(narration);
+    // Split into sections by headings for progress tracking
+    const sections = narration.split(/^##\s+/gm).filter(Boolean);
+    const sectionNames = sections.map(s => s.split('\n')[0].trim());
+
+    const utterance = new SpeechSynthesisUtterance(plainText);
+    utterance.rate = 1.05;
+    utterance.pitch = 1.1;
+
+    // Try to pick a good voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.includes('Google') && v.lang.startsWith('en')
+    ) || voices.find(v => v.lang.startsWith('en-IN'))
+      || voices.find(v => v.lang.startsWith('en'));
+    if (preferred) utterance.voice = preferred;
+
+    // Track which section is being read
+    let charIndex = 0;
+    const sectionOffsets: number[] = [];
+    let offset = 0;
+    for (const section of sections) {
+      sectionOffsets.push(offset);
+      offset += stripMarkdown(section).length + 1;
+    }
+
+    utterance.onboundary = (event) => {
+      if (event.name === 'word') {
+        charIndex = event.charIndex;
+        for (let i = sectionOffsets.length - 1; i >= 0; i--) {
+          if (charIndex >= sectionOffsets[i]) {
+            setCurrentSection(sectionNames[i] || null);
+            break;
+          }
+        }
+      }
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+      setCurrentSection(null);
+    };
+
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsPaused(false);
+      setCurrentSection(null);
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+    setIsPaused(false);
+  };
+
+  const pauseSpeaking = () => {
+    window.speechSynthesis.pause();
+    setIsPaused(true);
+    setIsSpeaking(false);
+  };
+
+  const stopSpeaking = () => {
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setCurrentSection(null);
+  };
+
   const handleToggle = () => {
     if (!isExpanded && !hasGenerated) {
       generateNarration();
@@ -82,8 +183,14 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {(isSpeaking || isPaused) && (
+            <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 px-1.5 py-0.5 rounded-full font-medium">
+              <span className={cn("w-1.5 h-1.5 rounded-full bg-red-500", isSpeaking && "animate-pulse")} />
+              {isSpeaking ? 'LIVE' : 'PAUSED'}
+            </span>
+          )}
           {isLoading && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
-          {hasGenerated && (
+          {hasGenerated && !isSpeaking && !isPaused && (
             <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400 px-1.5 py-0.5 rounded-full font-medium">
               Ready
             </span>
@@ -121,6 +228,62 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
             </div>
           ) : narration ? (
             <div className="p-4 space-y-3">
+              {/* Voice Controls */}
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-violet-100/80 to-fuchsia-100/80 dark:from-violet-950/40 dark:to-fuchsia-950/40 border border-violet-200/50 dark:border-violet-800/50">
+                <button
+                  onClick={(e) => { e.stopPropagation(); isSpeaking ? pauseSpeaking() : speakNarration(); }}
+                  className={cn(
+                    "p-2.5 rounded-full transition-all shadow-md",
+                    isSpeaking
+                      ? "bg-violet-600 text-white hover:bg-violet-700 animate-pulse"
+                      : "bg-violet-500 text-white hover:bg-violet-600"
+                  )}
+                >
+                  {isSpeaking ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                </button>
+
+                {(isSpeaking || isPaused) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); stopSpeaking(); }}
+                    className="p-2 rounded-full bg-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/30 transition-colors"
+                  >
+                    <VolumeX className="w-4 h-4" />
+                  </button>
+                )}
+
+                <div className="flex-1 ml-2">
+                  <p className="text-xs font-semibold text-violet-800 dark:text-violet-300">
+                    {isSpeaking ? '🎙️ Now Playing...' : isPaused ? '⏸️ Paused' : '🔊 Listen to narration'}
+                  </p>
+                  {currentSection && (
+                    <p className="text-[10px] text-violet-600 dark:text-violet-400 truncate mt-0.5">
+                      📍 {currentSection}
+                    </p>
+                  )}
+                  {!isSpeaking && !isPaused && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Tap play to hear your RJ narrate the trip
+                    </p>
+                  )}
+                </div>
+
+                {isSpeaking && (
+                  <div className="flex items-end gap-0.5 h-5">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-violet-500 rounded-full animate-pulse"
+                        style={{
+                          height: `${Math.random() * 16 + 4}px`,
+                          animationDelay: `${i * 0.1}s`,
+                          animationDuration: `${0.4 + Math.random() * 0.3}s`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div
                 className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed
                   prose-headings:text-violet-700 dark:prose-headings:text-violet-400
@@ -133,6 +296,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  stopSpeaking();
                   generateNarration();
                 }}
                 className={cn(
