@@ -162,6 +162,12 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     const voice = getVoiceForLang(generatedLang);
     const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
 
+    if (!voice && generatedLang !== 'en') {
+      const langLabel = LANGUAGES.find(l => l.code === generatedLang)?.label || generatedLang;
+      toast.error(`No ${langLabel} voice found on your device. The text is in ${langLabel} but will be read in English. Try using Chrome on Android for best regional voice support.`);
+    }
+    console.log('Selected voice:', voice?.name, voice?.lang, '| Target lang:', langTag);
+
     let chunkIndex = 0;
     let totalCharsSpoken = 0;
 
