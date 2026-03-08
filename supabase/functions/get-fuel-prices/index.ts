@@ -21,6 +21,9 @@ serve(async (req) => {
 
     const today = new Date().toISOString().split("T")[0];
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
     const response = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
@@ -31,15 +34,12 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash-lite",
+          max_tokens: 150,
+          temperature: 0,
           messages: [
             {
-              role: "system",
-              content:
-                "You are a fuel price data provider. Return ONLY the JSON object requested, no markdown, no explanation.",
-            },
-            {
               role: "user",
-              content: `What are the current fuel prices in ${city}, India as of ${today}? Return ONLY a JSON object in this exact format: {"petrol": <price_per_liter_INR>, "diesel": <price_per_liter_INR>, "cng": <price_per_kg_INR>, "city": "<city_name>", "date": "${today}"}. Use the most recent known prices. Numbers only, no currency symbols.`,
+              content: `Current fuel prices in ${city}, India (${today}). Reply ONLY with JSON: {"petrol":NUMBER,"diesel":NUMBER,"cng":NUMBER,"city":"NAME","date":"${today}"}`,
             },
           ],
           tools: [
@@ -47,27 +47,15 @@ serve(async (req) => {
               type: "function",
               function: {
                 name: "return_fuel_prices",
-                description: "Return current fuel prices for a city in India",
+                description: "Return fuel prices",
                 parameters: {
                   type: "object",
                   properties: {
-                    petrol: {
-                      type: "number",
-                      description: "Petrol price per liter in INR",
-                    },
-                    diesel: {
-                      type: "number",
-                      description: "Diesel price per liter in INR",
-                    },
-                    cng: {
-                      type: "number",
-                      description: "CNG price per kg in INR",
-                    },
-                    city: { type: "string", description: "City name" },
-                    date: {
-                      type: "string",
-                      description: "Date of the prices YYYY-MM-DD",
-                    },
+                    petrol: { type: "number" },
+                    diesel: { type: "number" },
+                    cng: { type: "number" },
+                    city: { type: "string" },
+                    date: { type: "string" },
                   },
                   required: ["petrol", "diesel", "cng", "city", "date"],
                   additionalProperties: false,
@@ -80,31 +68,28 @@ serve(async (req) => {
             function: { name: "return_fuel_prices" },
           },
         }),
+        signal: controller.signal,
       }
     );
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({ error: "Rate limited, please try again later." }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ success: false, error: "Rate limited, please try again later." }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (response.status === 402) {
         return new Response(
-          JSON.stringify({ error: "Payment required." }),
-          {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ success: false, error: "Payment required." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const t = await response.text();
       console.error("AI gateway error:", response.status, t);
-      throw new Error("Failed to fetch fuel prices");
+      throw new Error(`AI gateway error: ${response.status}`);
     }
 
     const aiData = await response.json();
@@ -114,22 +99,34 @@ serve(async (req) => {
       const prices = JSON.parse(toolCall.function.arguments);
       return new Response(
         JSON.stringify({ success: true, prices }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Fallback: try parsing content directly
+    const content = aiData.choices?.[0]?.message?.content;
+    if (content) {
+      const jsonMatch = content.match(/\{[^}]+\}/);
+      if (jsonMatch) {
+        const prices = JSON.parse(jsonMatch[0]);
+        return new Response(
+          JSON.stringify({ success: true, prices }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     throw new Error("Unexpected AI response format");
   } catch (e) {
     console.error("get-fuel-prices error:", e);
+    const isTimeout = e instanceof DOMException && e.name === "AbortError";
     return new Response(
       JSON.stringify({
         success: false,
-        error: e instanceof Error ? e.message : "Unknown error",
+        error: isTimeout ? "Request timed out, please try again" : (e instanceof Error ? e.message : "Unknown error"),
       }),
       {
-        status: 500,
+        status: isTimeout ? 504 : 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
