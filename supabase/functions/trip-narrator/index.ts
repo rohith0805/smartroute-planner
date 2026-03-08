@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { stops, vehicleType, totalDistance, totalTime, savings } = await req.json();
+    const { stops, vehicleType, totalDistance, totalTime, savings, language } = await req.json();
 
     if (!stops || !Array.isArray(stops) || stops.length < 2) {
       return new Response(
@@ -26,6 +26,13 @@ Deno.serve(async (req) => {
 
     const stopNames = stops.map((s: { name: string }) => s.name).join(" → ");
 
+    const langName = language === "te" ? "Telugu" : language === "hi" ? "Hindi" : "English";
+    const langInstruction = language === "te"
+      ? "Write the ENTIRE narration in Telugu script (తెలుగు). Use Telugu naturally as a native speaker would. Keep place names and food names in their original form but narrate everything else in Telugu."
+      : language === "hi"
+      ? "Write the ENTIRE narration in Hindi script (हिंदी). Use Hindi naturally as a native speaker would. Keep place names and food names in their original form but narrate everything else in Hindi."
+      : "Write the narration in English with occasional Hindi expressions (transliterated) for flavor.";
+
     const response = await fetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
@@ -36,12 +43,15 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
-          max_tokens: 1500,
+          max_tokens: 2000,
           temperature: 0.8,
           messages: [
             {
               role: "system",
-              content: `You are a charismatic Indian radio host narrating a road trip. Your style is fun, energetic, and informative — like an RJ on a popular FM station. Use a mix of English with occasional Hindi expressions (transliterated).
+              content: `You are a charismatic Indian radio host narrating a road trip. Your style is fun, energetic, and informative — like an RJ on a popular FM station.
+
+LANGUAGE: ${langName}
+${langInstruction}
 
 CRITICAL RULES:
 - Every fact MUST be historically and geographically accurate for that specific city/place. Do NOT make up or generalize facts.
@@ -59,7 +69,7 @@ End with a dramatic sign-off. Format as markdown with ## for each stop. Keep it 
             },
             {
               role: "user",
-              content: `Narrate this ${vehicleType} road trip: ${stopNames}. Total distance: ${totalDistance} km, estimated time: ${totalTime} minutes.${savings > 0 ? ` The optimized route saves ${savings.toFixed(1)}% distance!` : ""} Give real, accurate facts about each place. Make it fun and memorable!`,
+              content: `Narrate this ${vehicleType} road trip in ${langName}: ${stopNames}. Total distance: ${totalDistance} km, estimated time: ${totalTime} minutes.${savings > 0 ? ` The optimized route saves ${savings.toFixed(1)}% distance!` : ""} Give real, accurate facts about each place. Make it fun and memorable!`,
             },
           ],
         }),

@@ -1,10 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, ChevronDown, ChevronUp, Loader2, Radio, Volume2, VolumeX, Pause, Play } from 'lucide-react';
+import { Mic, ChevronDown, ChevronUp, Loader2, Radio, VolumeX, Pause, Play, Languages } from 'lucide-react';
 import { Location, VehicleType, OptimizationResult } from '@/lib/tsp';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+type NarratorLanguage = 'en' | 'hi' | 'te';
+
+const LANGUAGES: { code: NarratorLanguage; label: string; flag: string; voiceLang: string }[] = [
+  { code: 'en', label: 'English', flag: '🇬🇧', voiceLang: 'en' },
+  { code: 'hi', label: 'हिंदी', flag: '🇮🇳', voiceLang: 'hi' },
+  { code: 'te', label: 'తెలుగు', flag: '🇮🇳', voiceLang: 'te' },
+];
 
 interface TripNarratorProps {
   locations: Location[];
@@ -20,6 +28,8 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentSection, setCurrentSection] = useState<string | null>(null);
+  const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
+  const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
@@ -28,8 +38,18 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     };
   }, []);
 
-  const generateNarration = async () => {
+  // Pre-load voices
+  useEffect(() => {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => {
+      window.speechSynthesis.getVoices();
+    };
+  }, []);
+
+  const generateNarration = async (lang?: NarratorLanguage) => {
+    const targetLang = lang || selectedLang;
     setIsLoading(true);
+    stopSpeaking();
     try {
       const stops = locations.map((loc) => ({
         name: loc.name || loc.address,
@@ -44,6 +64,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           totalDistance: optimizationResult.optimizedRoute.totalDistance.toFixed(1),
           totalTime: optimizationResult.optimizedRoute.estimatedTime.toFixed(0),
           savings: optimizationResult.savingsPercentage,
+          language: targetLang,
         },
       });
 
@@ -52,7 +73,9 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
       setNarration(data.narration);
       setHasGenerated(true);
-      toast.success('Your trip narration is ready! 🎙️');
+      setGeneratedLang(targetLang);
+      const langLabel = LANGUAGES.find(l => l.code === targetLang)?.label || 'English';
+      toast.success(`Narration ready in ${langLabel}! 🎙️`);
     } catch (err) {
       console.error('Narration error:', err);
       toast.error('Could not generate narration, please try again');
@@ -71,6 +94,25 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       .trim();
   };
 
+  const getVoiceForLang = (langCode: NarratorLanguage): SpeechSynthesisVoice | null => {
+    const voices = window.speechSynthesis.getVoices();
+    const voiceLang = LANGUAGES.find(l => l.code === langCode)?.voiceLang || 'en';
+
+    // Try Google voices first (best quality)
+    const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.startsWith(voiceLang));
+    if (googleVoice) return googleVoice;
+
+    // Then try any matching voice with the country variant
+    const countryVoice = voices.find(v => v.lang.startsWith(voiceLang + '-'));
+    if (countryVoice) return countryVoice;
+
+    // Fallback to any matching language
+    const anyVoice = voices.find(v => v.lang.startsWith(voiceLang));
+    if (anyVoice) return anyVoice;
+
+    return null;
+  };
+
   const speakNarration = () => {
     if (!narration) return;
 
@@ -84,23 +126,23 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     window.speechSynthesis.cancel();
 
     const plainText = stripMarkdown(narration);
-    // Split into sections by headings for progress tracking
     const sections = narration.split(/^##\s+/gm).filter(Boolean);
     const sectionNames = sections.map(s => s.split('\n')[0].trim());
 
     const utterance = new SpeechSynthesisUtterance(plainText);
-    utterance.rate = 1.05;
+    utterance.rate = generatedLang === 'en' ? 1.05 : 0.95;
     utterance.pitch = 1.1;
 
-    // Try to pick a good voice
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(v =>
-      v.name.includes('Google') && v.lang.startsWith('en')
-    ) || voices.find(v => v.lang.startsWith('en-IN'))
-      || voices.find(v => v.lang.startsWith('en'));
-    if (preferred) utterance.voice = preferred;
+    const voice = getVoiceForLang(generatedLang);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang;
+    } else {
+      // Set lang tag even without a voice match
+      const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
+      utterance.lang = langTag;
+    }
 
-    // Track which section is being read
     let charIndex = 0;
     const sectionOffsets: number[] = [];
     let offset = 0;
@@ -159,6 +201,13 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     setIsExpanded(!isExpanded);
   };
 
+  const handleLanguageChange = (lang: NarratorLanguage) => {
+    setSelectedLang(lang);
+    if (hasGenerated && lang !== generatedLang) {
+      generateNarration(lang);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -178,7 +227,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           <div className="text-left">
             <p className="font-semibold text-foreground text-sm">Trip Narrator</p>
             <p className="text-xs text-muted-foreground">
-              AI radio-host style trip narration with fun facts
+              AI radio-host narration in English, Hindi & Telugu
             </p>
           </div>
         </div>
@@ -192,7 +241,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           {isLoading && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
           {hasGenerated && !isSpeaking && !isPaused && (
             <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400 px-1.5 py-0.5 rounded-full font-medium">
-              Ready
+              {LANGUAGES.find(l => l.code === generatedLang)?.flag} Ready
             </span>
           )}
           {isExpanded ? (
@@ -210,6 +259,32 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           animate={{ height: 'auto', opacity: 1 }}
           className="bg-card"
         >
+          {/* Language Selector */}
+          <div className="px-4 pt-3 pb-1">
+            <div className="flex items-center gap-2">
+              <Languages className="w-4 h-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground font-medium">Language:</span>
+              <div className="flex gap-1.5">
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
+                    disabled={isLoading}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
+                      selectedLang === lang.code
+                        ? "bg-violet-500 text-white border-violet-500 shadow-sm"
+                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
+                      isLoading && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {lang.flag} {lang.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {isLoading ? (
             <div className="p-6 flex flex-col items-center justify-center gap-3">
               <div className="relative">
@@ -220,14 +295,14 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full" />
               </div>
               <p className="text-sm text-muted-foreground font-medium">
-                Your RJ is preparing the narration...
+                Your RJ is preparing the {LANGUAGES.find(l => l.code === selectedLang)?.label} narration...
               </p>
               <p className="text-xs text-muted-foreground">
                 Gathering fun facts about your destinations
               </p>
             </div>
           ) : narration ? (
-            <div className="p-4 space-y-3">
+            <div className="p-4 pt-2 space-y-3">
               {/* Voice Controls */}
               <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-violet-100/80 to-fuchsia-100/80 dark:from-violet-950/40 dark:to-fuchsia-950/40 border border-violet-200/50 dark:border-violet-800/50">
                 <button
@@ -253,7 +328,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
                 <div className="flex-1 ml-2">
                   <p className="text-xs font-semibold text-violet-800 dark:text-violet-300">
-                    {isSpeaking ? '🎙️ Now Playing...' : isPaused ? '⏸️ Paused' : '🔊 Listen to narration'}
+                    {isSpeaking ? '🎙️ Now Playing...' : isPaused ? '⏸️ Paused' : `🔊 Listen in ${LANGUAGES.find(l => l.code === generatedLang)?.label}`}
                   </p>
                   {currentSection && (
                     <p className="text-[10px] text-violet-600 dark:text-violet-400 truncate mt-0.5">
@@ -315,7 +390,6 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   );
 }
 
-// Simple markdown to HTML converter
 function formatMarkdown(md: string): string {
   return md
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
