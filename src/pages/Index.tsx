@@ -327,6 +327,7 @@ const Index = () => {
                     locations={locations}
                     vehicleType={vehicleType}
                     optimizationResult={optimizationResult}
+                  />
                 </motion.section>
               )}
             </AnimatePresence>
