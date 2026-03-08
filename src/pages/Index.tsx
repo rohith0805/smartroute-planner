@@ -7,6 +7,7 @@ import { LocationInput } from '@/components/LocationInput';
 import { VehicleSelector } from '@/components/VehicleSelector';
 import { RouteComparison } from '@/components/RouteComparison';
 import { SaveTripDialog } from '@/components/SaveTripDialog';
+import { FuelCostCalculator } from '@/components/FuelCostCalculator';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Route, Sparkles, RotateCcw, Loader2, Navigation, User, FolderOpen, LogOut } from 'lucide-react';
@@ -315,6 +316,11 @@ const Index = () => {
                     showOptimized={showOptimized}
                     onToggleView={setShowOptimized}
                     optimizationTimeMs={optimizationTimeMs}
+                  />
+                  <FuelCostCalculator
+                    originalDistance={optimizationResult.originalRoute.totalDistance}
+                    optimizedDistance={optimizationResult.optimizedRoute.totalDistance}
+                    vehicleType={vehicleType}
                   />
                 </motion.section>
               )}
