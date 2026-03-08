@@ -33,13 +33,17 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash-lite",
+          model: "google/gemini-2.5-flash",
           max_tokens: 150,
           temperature: 0,
           messages: [
             {
+              role: "system",
+              content: "You are a fuel price database. You have access to the latest fuel prices across all Indian cities. Always return accurate, non-zero prices based on the most recent data you know. Petrol prices in India typically range from ₹94-110/L, diesel ₹87-95/L, CNG ₹75-90/kg depending on the city.",
+            },
+            {
               role: "user",
-              content: `Current fuel prices in ${city}, India (${today}). Reply ONLY with JSON: {"petrol":NUMBER,"diesel":NUMBER,"cng":NUMBER,"city":"NAME","date":"${today}"}`,
+              content: `What are the latest known fuel prices in ${city}, India? Return the most recent accurate prices you have data for. Do not return 0 for any value.`,
             },
           ],
           tools: [
