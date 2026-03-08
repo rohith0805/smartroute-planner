@@ -207,9 +207,6 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
                   <strong>{livePrices.city}</strong> — Petrol: ₹{livePrices.petrol}/L · Diesel: ₹{livePrices.diesel}/L · CNG: ₹{livePrices.cng}/kg
                 </span>
               </div>
-              <p className="text-[10px] text-muted-foreground italic px-1">
-                ⚠️ Prices are AI-estimated approximations and may differ by ₹1-2 from actual rates. For exact prices, check your local fuel station.
-              </p>
             </div>
           )}
 
