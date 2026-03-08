@@ -323,6 +323,10 @@ const Index = () => {
                     optimizedDistance={optimizationResult.optimizedRoute.totalDistance}
                     vehicleType={vehicleType}
                   />
+                  <TripNarrator
+                    locations={locations}
+                    vehicleType={vehicleType}
+                    optimizationResult={optimizationResult}
                 </motion.section>
               )}
             </AnimatePresence>
