@@ -34,43 +34,18 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
-          max_tokens: 150,
-          temperature: 0,
+          max_tokens: 200,
+          temperature: 0.1,
           messages: [
             {
               role: "system",
-              content: "You are a fuel price database. You have access to the latest fuel prices across all Indian cities. Always return accurate, non-zero prices based on the most recent data you know. Petrol prices in India typically range from ₹94-110/L, diesel ₹87-95/L, CNG ₹75-90/kg depending on the city.",
+              content: `You are a fuel price lookup service for India. You must return the most recent real fuel prices you know for any Indian city. Prices should be realistic and non-zero. As a reference: in most Indian cities as of late 2024, petrol is approximately ₹94-110/L, diesel is ₹87-97/L, and CNG is ₹75-90/kg. Prices vary by city and state taxes. Reply with ONLY a raw JSON object, no markdown, no backticks, no explanation.`,
             },
             {
               role: "user",
-              content: `What are the latest known fuel prices in ${city}, India? Return the most recent accurate prices you have data for. Do not return 0 for any value.`,
+              content: `Return the latest known fuel prices for ${city}, India as a JSON object with this exact format: {"petrol": <number>, "diesel": <number>, "cng": <number>, "city": "${city}", "date": "${today}"}. All prices must be non-zero realistic values in INR.`,
             },
           ],
-          tools: [
-            {
-              type: "function",
-              function: {
-                name: "return_fuel_prices",
-                description: "Return fuel prices",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    petrol: { type: "number" },
-                    diesel: { type: "number" },
-                    cng: { type: "number" },
-                    city: { type: "string" },
-                    date: { type: "string" },
-                  },
-                  required: ["petrol", "diesel", "cng", "city", "date"],
-                  additionalProperties: false,
-                },
-              },
-            },
-          ],
-          tool_choice: {
-            type: "function",
-            function: { name: "return_fuel_prices" },
-          },
         }),
         signal: controller.signal,
       }
@@ -97,37 +72,48 @@ serve(async (req) => {
     }
 
     const aiData = await response.json();
-    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+    const content = aiData.choices?.[0]?.message?.content || "";
+    console.log("AI response content:", content);
 
-    if (toolCall?.function?.arguments) {
-      const prices = JSON.parse(toolCall.function.arguments);
-      return new Response(
-        JSON.stringify({ success: true, prices }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Extract JSON from content (handle markdown code blocks too)
+    const cleaned = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    
+    if (!jsonMatch) {
+      throw new Error("Could not parse fuel prices from AI response");
     }
 
-    // Fallback: try parsing content directly
-    const content = aiData.choices?.[0]?.message?.content;
-    if (content) {
-      const jsonMatch = content.match(/\{[^}]+\}/);
-      if (jsonMatch) {
-        const prices = JSON.parse(jsonMatch[0]);
-        return new Response(
-          JSON.stringify({ success: true, prices }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    const prices = JSON.parse(jsonMatch[0]);
+
+    // Validate non-zero prices
+    if (!prices.petrol || !prices.diesel || prices.petrol === 0 || prices.diesel === 0) {
+      throw new Error("AI returned zero prices");
     }
 
-    throw new Error("Unexpected AI response format");
+    // Ensure all fields exist
+    const result = {
+      petrol: prices.petrol,
+      diesel: prices.diesel,
+      cng: prices.cng || 0,
+      city: prices.city || city,
+      date: prices.date || today,
+    };
+
+    return new Response(
+      JSON.stringify({ success: true, prices: result }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (e) {
     console.error("get-fuel-prices error:", e);
     const isTimeout = e instanceof DOMException && e.name === "AbortError";
     return new Response(
       JSON.stringify({
         success: false,
-        error: isTimeout ? "Request timed out, please try again" : (e instanceof Error ? e.message : "Unknown error"),
+        error: isTimeout
+          ? "Request timed out, please try again"
+          : e instanceof Error
+          ? e.message
+          : "Unknown error",
       }),
       {
         status: isTimeout ? 504 : 500,
