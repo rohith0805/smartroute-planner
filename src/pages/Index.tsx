@@ -8,6 +8,7 @@ import { VehicleSelector } from '@/components/VehicleSelector';
 import { RouteComparison } from '@/components/RouteComparison';
 import { SaveTripDialog } from '@/components/SaveTripDialog';
 import { FuelCostCalculator } from '@/components/FuelCostCalculator';
+import { TripNarrator } from '@/components/TripNarrator';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Route, Sparkles, RotateCcw, Loader2, Navigation, User, FolderOpen, LogOut } from 'lucide-react';
