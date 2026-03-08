@@ -317,6 +317,11 @@ const Index = () => {
                     onToggleView={setShowOptimized}
                     optimizationTimeMs={optimizationTimeMs}
                   />
+                  <FuelCostCalculator
+                    originalDistance={optimizationResult.originalRoute.totalDistance}
+                    optimizedDistance={optimizationResult.optimizedRoute.totalDistance}
+                    vehicleType={vehicleType}
+                  />
                 </motion.section>
               )}
             </AnimatePresence>
