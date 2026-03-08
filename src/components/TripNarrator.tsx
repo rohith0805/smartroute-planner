@@ -30,6 +30,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [currentSection, setCurrentSection] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
   const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
+  const [availableVoiceLangs, setAvailableVoiceLangs] = useState<Set<string>>(new Set(['en']));
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
@@ -38,12 +39,25 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     };
   }, []);
 
-  // Pre-load voices
+  // Detect available voice languages
   useEffect(() => {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => {
-      window.speechSynthesis.getVoices();
+    const detectVoices = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const langs = new Set<string>();
+      voices.forEach(v => {
+        if (v.lang.startsWith('en')) langs.add('en');
+        if (v.lang.startsWith('hi')) langs.add('hi');
+        if (v.lang.startsWith('te')) langs.add('te');
+      });
+      if (langs.size === 0) langs.add('en');
+      setAvailableVoiceLangs(langs);
+      console.log('Available TTS voices:', voices.map(v => `${v.name} (${v.lang})`));
+      console.log('Detected voice languages:', [...langs]);
     };
+
+    detectVoices();
+    window.speechSynthesis.onvoiceschanged = detectVoices;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
   const generateNarration = async (lang?: NarratorLanguage) => {
@@ -147,6 +161,12 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
     const voice = getVoiceForLang(generatedLang);
     const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
+
+    if (!voice && generatedLang !== 'en') {
+      const langLabel = LANGUAGES.find(l => l.code === generatedLang)?.label || generatedLang;
+      toast.error(`No ${langLabel} voice found on your device. The text is in ${langLabel} but will be read in English. Try using Chrome on Android for best regional voice support.`);
+    }
+    console.log('Selected voice:', voice?.name, voice?.lang, '| Target lang:', langTag);
 
     let chunkIndex = 0;
     let totalCharsSpoken = 0;
@@ -296,22 +316,29 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               <Languages className="w-4 h-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground font-medium">Language:</span>
               <div className="flex gap-1.5">
-                {LANGUAGES.map((lang) => (
-                  <button
-                    key={lang.code}
-                    onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
-                    disabled={isLoading}
-                    className={cn(
-                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
-                      selectedLang === lang.code
-                        ? "bg-violet-500 text-white border-violet-500 shadow-sm"
-                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
-                      isLoading && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {lang.flag} {lang.label}
-                  </button>
-                ))}
+                {LANGUAGES.map((lang) => {
+                  const hasVoice = availableVoiceLangs.has(lang.code);
+                  return (
+                    <button
+                      key={lang.code}
+                      onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
+                      disabled={isLoading}
+                      title={hasVoice ? `${lang.label} text & voice` : `${lang.label} text only (no voice on this device)`}
+                      className={cn(
+                        "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
+                        selectedLang === lang.code
+                          ? "bg-violet-500 text-white border-violet-500 shadow-sm"
+                          : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
+                        isLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {lang.flag} {lang.label}
+                      {!hasVoice && lang.code !== 'en' && (
+                        <span className="ml-1 text-[9px] opacity-70">📝</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
