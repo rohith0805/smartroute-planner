@@ -30,6 +30,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [currentSection, setCurrentSection] = useState<string | null>(null);
   const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
   const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
+  const [availableVoiceLangs, setAvailableVoiceLangs] = useState<Set<string>>(new Set(['en']));
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
