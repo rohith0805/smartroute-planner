@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, ChevronDown, ChevronUp, Loader2, Radio, VolumeX, Pause, Play, Languages } from 'lucide-react';
+import { Mic, ChevronDown, ChevronUp, Loader2, Radio, VolumeX, Pause, Play, Languages, Volume2 } from 'lucide-react';
 import { Location, VehicleType, OptimizationResult } from '@/lib/tsp';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -8,10 +8,10 @@ import { cn } from '@/lib/utils';
 
 type NarratorLanguage = 'en' | 'hi' | 'te';
 
-const LANGUAGES: { code: NarratorLanguage; label: string; flag: string; voiceLang: string }[] = [
-  { code: 'en', label: 'English', flag: '🇬🇧', voiceLang: 'en' },
-  { code: 'hi', label: 'हिंदी', flag: '🇮🇳', voiceLang: 'hi' },
-  { code: 'te', label: 'తెలుగు', flag: '🇮🇳', voiceLang: 'te' },
+const LANGUAGES: { code: NarratorLanguage; label: string; flag: string }[] = [
+  { code: 'en', label: 'English', flag: '🇬🇧' },
+  { code: 'hi', label: 'हिंदी', flag: '🇮🇳' },
+  { code: 'te', label: 'తెలుగు', flag: '🇮🇳' },
 ];
 
 interface TripNarratorProps {
@@ -27,37 +27,19 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [currentSection, setCurrentSection] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
   const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
-  const [availableVoiceLangs, setAvailableVoiceLangs] = useState<Set<string>>(new Set(['en']));
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
-      window.speechSynthesis.cancel();
+      stopSpeaking();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
     };
-  }, []);
-
-  // Detect available voice languages
-  useEffect(() => {
-    const detectVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      const langs = new Set<string>();
-      voices.forEach(v => {
-        if (v.lang.startsWith('en')) langs.add('en');
-        if (v.lang.startsWith('hi')) langs.add('hi');
-        if (v.lang.startsWith('te')) langs.add('te');
-      });
-      if (langs.size === 0) langs.add('en');
-      setAvailableVoiceLangs(langs);
-      console.log('Available TTS voices:', voices.map(v => `${v.name} (${v.lang})`));
-      console.log('Detected voice languages:', [...langs]);
-    };
-
-    detectVoices();
-    window.speechSynthesis.onvoiceschanged = detectVoices;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
   const generateNarration = async (lang?: NarratorLanguage) => {
@@ -88,6 +70,12 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       setNarration(data.narration);
       setHasGenerated(true);
       setGeneratedLang(targetLang);
+      // Clean up previous audio
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
+      audioRef.current = null;
       const langLabel = LANGUAGES.find(l => l.code === targetLang)?.label || 'English';
       toast.success(`Narration ready in ${langLabel}! 🎙️`);
     } catch (err) {
@@ -108,141 +96,99 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       .trim();
   };
 
-  const getVoiceForLang = (langCode: NarratorLanguage): SpeechSynthesisVoice | null => {
-    const voices = window.speechSynthesis.getVoices();
-    const langTag = langCode === 'te' ? 'te' : langCode === 'hi' ? 'hi' : 'en';
-
-    // Filter voices strictly by language
-    const matchingVoices = voices.filter(v => v.lang.startsWith(langTag + '-') || v.lang === langTag);
-
-    if (matchingVoices.length === 0) return null;
-
-    // Prefer Google voices
-    const google = matchingVoices.find(v => v.name.toLowerCase().includes('google'));
-    if (google) return google;
-
-    // Then prefer India locale
-    const india = matchingVoices.find(v => v.lang.includes('IN'));
-    if (india) return india;
-
-    return matchingVoices[0];
-  };
-
-  // Chrome bug: speechSynthesis stops after ~15s. Workaround: split into chunks.
-  const speakNarration = () => {
+  const speakNarration = async () => {
     if (!narration) return;
 
-    if (isPaused) {
-      window.speechSynthesis.resume();
+    // Resume if paused
+    if (isPaused && audioRef.current) {
+      audioRef.current.play();
       setIsPaused(false);
       setIsSpeaking(true);
       return;
     }
 
-    window.speechSynthesis.cancel();
+    // If we already have audio loaded, replay it
+    if (audioRef.current && audioUrlRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
+      setIsSpeaking(true);
+      setIsPaused(false);
+      return;
+    }
 
-    const plainText = stripMarkdown(narration);
-    const sections = narration.split(/^##\s+/gm).filter(Boolean);
-    const sectionNames = sections.map(s => s.split('\n')[0].trim());
+    // Generate audio via ElevenLabs cloud TTS
+    setIsLoadingAudio(true);
+    try {
+      const plainText = stripMarkdown(narration);
 
-    // Split text into sentences to avoid Chrome's ~15s cutoff bug
-    const sentences = plainText.match(/[^.!?।\n]+[.!?।\n]+/g) || [plainText];
-    const chunks: string[] = [];
-    let current = '';
-    for (const sentence of sentences) {
-      if ((current + sentence).length > 200) {
-        if (current) chunks.push(current.trim());
-        current = sentence;
-      } else {
-        current += sentence;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ text: plainText, language: generatedLang }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `TTS request failed: ${response.status}`);
       }
-    }
-    if (current.trim()) chunks.push(current.trim());
 
-    const voice = getVoiceForLang(generatedLang);
-    const langTag = generatedLang === 'te' ? 'te-IN' : generatedLang === 'hi' ? 'hi-IN' : 'en-IN';
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
 
-    if (!voice && generatedLang !== 'en') {
-      const langLabel = LANGUAGES.find(l => l.code === generatedLang)?.label || generatedLang;
-      toast.error(`No ${langLabel} voice found on your device. The text is in ${langLabel} but will be read in English. Try using Chrome on Android for best regional voice support.`);
-    }
-    console.log('Selected voice:', voice?.name, voice?.lang, '| Target lang:', langTag);
+      // Clean up previous URL
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      audioUrlRef.current = audioUrl;
 
-    let chunkIndex = 0;
-    let totalCharsSpoken = 0;
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
 
-    // Compute section offsets for progress tracking
-    const sectionOffsets: number[] = [];
-    let offset = 0;
-    for (const section of sections) {
-      sectionOffsets.push(offset);
-      offset += stripMarkdown(section).length + 1;
-    }
-
-    const speakNextChunk = () => {
-      if (chunkIndex >= chunks.length) {
+      audio.onended = () => {
         setIsSpeaking(false);
         setIsPaused(false);
-        setCurrentSection(null);
-        return;
-      }
-
-      const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
-      utterance.rate = generatedLang === 'en' ? 1.05 : 0.95;
-      utterance.pitch = 1.1;
-      utterance.lang = langTag;
-      if (voice) utterance.voice = voice;
-
-      const chunkStartChar = totalCharsSpoken;
-
-      utterance.onboundary = (event) => {
-        if (event.name === 'word') {
-          const globalChar = chunkStartChar + event.charIndex;
-          for (let i = sectionOffsets.length - 1; i >= 0; i--) {
-            if (globalChar >= sectionOffsets[i]) {
-              setCurrentSection(sectionNames[i] || null);
-              break;
-            }
-          }
-        }
       };
 
-      utterance.onend = () => {
-        totalCharsSpoken += chunks[chunkIndex].length + 1;
-        chunkIndex++;
-        speakNextChunk();
+      audio.onerror = () => {
+        console.error('Audio playback error');
+        setIsSpeaking(false);
+        setIsPaused(false);
+        toast.error('Audio playback failed');
       };
 
-      utterance.onerror = (e) => {
-        // 'interrupted' is normal when user stops; only fail on real errors
-        if (e.error !== 'interrupted' && e.error !== 'canceled') {
-          console.error('Speech error:', e.error);
-          setIsSpeaking(false);
-          setIsPaused(false);
-          setCurrentSection(null);
-        }
-      };
-
-      utteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    };
-
-    setIsSpeaking(true);
-    setIsPaused(false);
-    speakNextChunk();
+      await audio.play();
+      setIsSpeaking(true);
+      setIsPaused(false);
+    } catch (err) {
+      console.error('Cloud TTS error:', err);
+      toast.error(err instanceof Error ? err.message : 'Voice generation failed');
+    } finally {
+      setIsLoadingAudio(false);
+    }
   };
 
   const pauseSpeaking = () => {
-    window.speechSynthesis.pause();
-    setIsPaused(true);
-    setIsSpeaking(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPaused(true);
+      setIsSpeaking(false);
+    }
   };
 
   const stopSpeaking = () => {
-    window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
     setIsSpeaking(false);
     setIsPaused(false);
-    setCurrentSection(null);
   };
 
   const handleToggle = () => {
@@ -289,7 +235,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               {isSpeaking ? 'LIVE' : 'PAUSED'}
             </span>
           )}
-          {isLoading && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
+          {(isLoading || isLoadingAudio) && <Loader2 className="w-4 h-4 animate-spin text-violet-500" />}
           {hasGenerated && !isSpeaking && !isPaused && (
             <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400 px-1.5 py-0.5 rounded-full font-medium">
               {LANGUAGES.find(l => l.code === generatedLang)?.flag} Ready
@@ -316,29 +262,22 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               <Languages className="w-4 h-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground font-medium">Language:</span>
               <div className="flex gap-1.5">
-                {LANGUAGES.map((lang) => {
-                  const hasVoice = availableVoiceLangs.has(lang.code);
-                  return (
-                    <button
-                      key={lang.code}
-                      onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
-                      disabled={isLoading}
-                      title={hasVoice ? `${lang.label} text & voice` : `${lang.label} text only (no voice on this device)`}
-                      className={cn(
-                        "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
-                        selectedLang === lang.code
-                          ? "bg-violet-500 text-white border-violet-500 shadow-sm"
-                          : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
-                        isLoading && "opacity-50 cursor-not-allowed"
-                      )}
-                    >
-                      {lang.flag} {lang.label}
-                      {!hasVoice && lang.code !== 'en' && (
-                        <span className="ml-1 text-[9px] opacity-70">📝</span>
-                      )}
-                    </button>
-                  );
-                })}
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.code); }}
+                    disabled={isLoading}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-all border",
+                      selectedLang === lang.code
+                        ? "bg-violet-500 text-white border-violet-500 shadow-sm"
+                        : "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
+                      isLoading && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {lang.flag} {lang.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -364,15 +303,28 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
               {/* Voice Controls */}
               <div className="flex items-center gap-2 p-3 rounded-lg bg-gradient-to-r from-violet-100/80 to-fuchsia-100/80 dark:from-violet-950/40 dark:to-fuchsia-950/40 border border-violet-200/50 dark:border-violet-800/50">
                 <button
-                  onClick={(e) => { e.stopPropagation(); isSpeaking ? pauseSpeaking() : speakNarration(); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLoadingAudio) return;
+                    isSpeaking ? pauseSpeaking() : speakNarration();
+                  }}
+                  disabled={isLoadingAudio}
                   className={cn(
                     "p-2.5 rounded-full transition-all shadow-md",
-                    isSpeaking
-                      ? "bg-violet-600 text-white hover:bg-violet-700 animate-pulse"
-                      : "bg-violet-500 text-white hover:bg-violet-600"
+                    isLoadingAudio
+                      ? "bg-violet-400 text-white cursor-wait"
+                      : isSpeaking
+                        ? "bg-violet-600 text-white hover:bg-violet-700 animate-pulse"
+                        : "bg-violet-500 text-white hover:bg-violet-600"
                   )}
                 >
-                  {isSpeaking ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                  {isLoadingAudio ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : isSpeaking ? (
+                    <Pause className="w-5 h-5" />
+                  ) : (
+                    <Play className="w-5 h-5" />
+                  )}
                 </button>
 
                 {(isSpeaking || isPaused) && (
@@ -386,16 +338,16 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
                 <div className="flex-1 ml-2">
                   <p className="text-xs font-semibold text-violet-800 dark:text-violet-300">
-                    {isSpeaking ? '🎙️ Now Playing...' : isPaused ? '⏸️ Paused' : `🔊 Listen in ${LANGUAGES.find(l => l.code === generatedLang)?.label}`}
+                    {isLoadingAudio ? '🎙️ Generating voice...' : isSpeaking ? '🎙️ Now Playing...' : isPaused ? '⏸️ Paused' : `🔊 Listen in ${LANGUAGES.find(l => l.code === generatedLang)?.label}`}
                   </p>
-                  {currentSection && (
-                    <p className="text-[10px] text-violet-600 dark:text-violet-400 truncate mt-0.5">
-                      📍 {currentSection}
+                  {isLoadingAudio && (
+                    <p className="text-[10px] text-violet-600 dark:text-violet-400 mt-0.5">
+                      Cloud TTS generating high-quality audio...
                     </p>
                   )}
-                  {!isSpeaking && !isPaused && (
+                  {!isSpeaking && !isPaused && !isLoadingAudio && (
                     <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Tap play to hear your RJ narrate the trip
+                      Powered by ElevenLabs — works on all devices
                     </p>
                   )}
                 </div>
