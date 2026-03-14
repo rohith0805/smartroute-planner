@@ -200,11 +200,13 @@ export function FuelCostCalculator({ originalDistance, optimizedDistance, vehicl
 
           {/* Live price display */}
           {livePrices && (
-            <div className="flex items-center gap-3 p-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-xs">
-              <MapPin className="w-3.5 h-3.5 text-green-600 dark:text-green-400 shrink-0" />
-              <span className="text-green-700 dark:text-green-300">
-                <strong>{livePrices.city}</strong> — Petrol: ₹{livePrices.petrol}/L · Diesel: ₹{livePrices.diesel}/L · CNG: ₹{livePrices.cng}/kg
-              </span>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3 p-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-xs">
+                <MapPin className="w-3.5 h-3.5 text-green-600 dark:text-green-400 shrink-0" />
+                <span className="text-green-700 dark:text-green-300">
+                  <strong>{livePrices.city}</strong> — Petrol: ₹{livePrices.petrol}/L · Diesel: ₹{livePrices.diesel}/L · CNG: ₹{livePrices.cng}/kg
+                </span>
+              </div>
             </div>
           )}
 
