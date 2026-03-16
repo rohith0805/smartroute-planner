@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Mic, ChevronDown, ChevronUp, Loader2, Radio, VolumeX, Pause, Play, Languages, Volume2 } from 'lucide-react';
 import { Location, VehicleType, OptimizationResult } from '@/lib/tsp';
@@ -30,8 +30,15 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
   const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
+  const [volume, setVolume] = useState(80);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+
+  const applyVolume = useCallback((v: number) => {
+    if (audioRef.current) {
+      audioRef.current.volume = v / 100;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -149,6 +156,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       audioUrlRef.current = audioUrl;
 
       const audio = new Audio(audioUrl);
+      audio.volume = volume / 100;
       audioRef.current = audio;
 
       audio.onended = () => {
@@ -352,21 +360,22 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
                   )}
                 </div>
 
-                {isSpeaking && (
-                  <div className="flex items-end gap-0.5 h-5">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div
-                        key={i}
-                        className="w-1 bg-violet-500 rounded-full animate-pulse"
-                        style={{
-                          height: `${Math.random() * 16 + 4}px`,
-                          animationDelay: `${i * 0.1}s`,
-                          animationDuration: `${0.4 + Math.random() * 0.3}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="flex items-center gap-2 ml-auto min-w-[100px]">
+                  <Volume2 className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={volume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setVolume(v);
+                      applyVolume(v);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full h-1.5 accent-violet-500 cursor-pointer"
+                  />
+                </div>
               </div>
 
               <div
