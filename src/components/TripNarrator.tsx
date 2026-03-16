@@ -360,21 +360,22 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
                   )}
                 </div>
 
-                {isSpeaking && (
-                  <div className="flex items-end gap-0.5 h-5">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <div
-                        key={i}
-                        className="w-1 bg-violet-500 rounded-full animate-pulse"
-                        style={{
-                          height: `${Math.random() * 16 + 4}px`,
-                          animationDelay: `${i * 0.1}s`,
-                          animationDuration: `${0.4 + Math.random() * 0.3}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className="flex items-center gap-2 ml-auto min-w-[100px]">
+                  <Volume2 className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={volume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setVolume(v);
+                      applyVolume(v);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full h-1.5 accent-violet-500 cursor-pointer"
+                  />
+                </div>
               </div>
 
               <div
