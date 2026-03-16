@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Mic, ChevronDown, ChevronUp, Loader2, Radio, VolumeX, Pause, Play, Languages, Volume2 } from 'lucide-react';
 import { Location, VehicleType, OptimizationResult } from '@/lib/tsp';
