@@ -156,6 +156,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       audioUrlRef.current = audioUrl;
 
       const audio = new Audio(audioUrl);
+      audio.volume = volume / 100;
       audioRef.current = audio;
 
       audio.onended = () => {
