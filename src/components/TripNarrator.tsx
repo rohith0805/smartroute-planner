@@ -30,8 +30,15 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [selectedLang, setSelectedLang] = useState<NarratorLanguage>('en');
   const [generatedLang, setGeneratedLang] = useState<NarratorLanguage>('en');
+  const [volume, setVolume] = useState(80);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+
+  const applyVolume = useCallback((v: number) => {
+    if (audioRef.current) {
+      audioRef.current.volume = v / 100;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
