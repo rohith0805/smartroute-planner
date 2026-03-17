@@ -214,9 +214,12 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
   const pauseSpeaking = () => {
     if (audioRef.current) {
       audioRef.current.pause();
-      setIsPaused(true);
-      setIsSpeaking(false);
     }
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.pause();
+    }
+    setIsPaused(true);
+    setIsSpeaking(false);
   };
 
   const stopSpeaking = () => {
@@ -224,6 +227,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
+    window.speechSynthesis.cancel();
     setIsSpeaking(false);
     setIsPaused(false);
   };
