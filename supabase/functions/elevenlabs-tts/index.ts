@@ -64,9 +64,13 @@ Deno.serve(async (req) => {
       console.error("ElevenLabs API error:", response.status, errorText);
 
       if (response.status === 401) {
+        const errorData = JSON.parse(errorText).detail || {};
+        const message = errorData.status === "quota_exceeded"
+          ? `Quota exceeded: ${errorData.message}`
+          : "Invalid ElevenLabs API key";
         return new Response(
-          JSON.stringify({ error: "Invalid ElevenLabs API key" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ error: message }),
+          { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (response.status === 429) {
