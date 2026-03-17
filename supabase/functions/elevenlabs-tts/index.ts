@@ -34,8 +34,8 @@ Deno.serve(async (req) => {
     const lang = language || "en";
     const config = VOICE_MAP[lang] || VOICE_MAP.en;
 
-    // Truncate to ~5000 chars to stay within limits
-    const truncatedText = text.length > 5000 ? text.substring(0, 5000) + "..." : text;
+    // Truncate to stay within credit limits
+    const truncatedText = text.length > 1000 ? text.substring(0, 1000) + "..." : text;
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${config.voiceId}?output_format=mp3_44100_128`,
