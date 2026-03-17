@@ -103,15 +103,39 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       .trim();
   };
 
+  const speakWithBrowserTTS = (text: string) => {
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.volume = volume / 100;
+    utterance.rate = 1.0;
+    const langMap: Record<NarratorLanguage, string> = { en: 'en-US', hi: 'hi-IN', te: 'te-IN' };
+    utterance.lang = langMap[generatedLang] || 'en-US';
+    utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); };
+    utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); };
+    synth.speak(utterance);
+    setIsSpeaking(true);
+    setIsPaused(false);
+    toast.info('Using browser voice (ElevenLabs unavailable)');
+  };
+
   const speakNarration = async () => {
     if (!narration) return;
 
-    // Resume if paused
-    if (isPaused && audioRef.current) {
-      audioRef.current.play();
-      setIsPaused(false);
-      setIsSpeaking(true);
-      return;
+    // Resume if paused — handle both audio element and browser TTS
+    if (isPaused) {
+      if (audioRef.current) {
+        audioRef.current.play();
+        setIsPaused(false);
+        setIsSpeaking(true);
+        return;
+      }
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        setIsPaused(false);
+        setIsSpeaking(true);
+        return;
+      }
     }
 
     // If we already have audio loaded, replay it
@@ -125,9 +149,8 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
     // Generate audio via ElevenLabs cloud TTS
     setIsLoadingAudio(true);
+    const plainText = stripMarkdown(narration);
     try {
-      const plainText = stripMarkdown(narration);
-
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
         {
@@ -143,13 +166,20 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `TTS request failed: ${response.status}`);
+        const errorMsg = errorData.error || '';
+        // Fallback to browser TTS on quota/auth issues
+        if (response.status === 401 || response.status === 429 || errorMsg.toLowerCase().includes('quota')) {
+          console.warn('ElevenLabs unavailable, falling back to browser TTS:', errorMsg);
+          setIsLoadingAudio(false);
+          speakWithBrowserTTS(plainText);
+          return;
+        }
+        throw new Error(errorMsg || `TTS request failed: ${response.status}`);
       }
 
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
 
-      // Clean up previous URL
       if (audioUrlRef.current) {
         URL.revokeObjectURL(audioUrlRef.current);
       }
@@ -159,11 +189,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       audio.volume = volume / 100;
       audioRef.current = audio;
 
-      audio.onended = () => {
-        setIsSpeaking(false);
-        setIsPaused(false);
-      };
-
+      audio.onended = () => { setIsSpeaking(false); setIsPaused(false); };
       audio.onerror = () => {
         console.error('Audio playback error');
         setIsSpeaking(false);
@@ -176,7 +202,10 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
       setIsPaused(false);
     } catch (err) {
       console.error('Cloud TTS error:', err);
-      toast.error(err instanceof Error ? err.message : 'Voice generation failed');
+      // Fallback to browser TTS on any failure
+      setIsLoadingAudio(false);
+      speakWithBrowserTTS(plainText);
+      return;
     } finally {
       setIsLoadingAudio(false);
     }
