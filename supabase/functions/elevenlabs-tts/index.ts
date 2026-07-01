@@ -1,19 +1,41 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Voice IDs for different languages
 const VOICE_MAP: Record<string, { voiceId: string; modelId: string }> = {
-  en: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" }, // George
-  hi: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" }, // George (multilingual)
-  te: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" }, // George (multilingual)
+  en: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" },
+  hi: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" },
+  te: { voiceId: "JBFqnCBsd6RMkjVDRZzb", modelId: "eleven_multilingual_v2" },
 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Require authenticated user
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const supabaseAuth = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
+  );
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 
   try {
@@ -31,10 +53,9 @@ Deno.serve(async (req) => {
       throw new Error("ELEVENLABS_API_KEY is not configured");
     }
 
-    const lang = language || "en";
+    const lang = ["en", "hi", "te"].includes(language) ? language : "en";
     const config = VOICE_MAP[lang] || VOICE_MAP.en;
 
-    // Truncate to stay within credit limits
     const truncatedText = text.length > 1000 ? text.substring(0, 1000) + "..." : text;
 
     const response = await fetch(
@@ -64,10 +85,13 @@ Deno.serve(async (req) => {
       console.error("ElevenLabs API error:", response.status, errorText);
 
       if (response.status === 401) {
-        const errorData = JSON.parse(errorText).detail || {};
-        const message = errorData.status === "quota_exceeded"
-          ? `Quota exceeded: ${errorData.message}`
-          : "Invalid ElevenLabs API key";
+        let message = "Invalid ElevenLabs API key";
+        try {
+          const errorData = JSON.parse(errorText).detail || {};
+          if (errorData.status === "quota_exceeded") {
+            message = `Quota exceeded: ${errorData.message}`;
+          }
+        } catch { /* ignore */ }
         return new Response(
           JSON.stringify({ error: message }),
           { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -79,12 +103,10 @@ Deno.serve(async (req) => {
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
       throw new Error(`ElevenLabs API error: ${response.status}`);
     }
 
     const audioBuffer = await response.arrayBuffer();
-
     return new Response(audioBuffer, {
       headers: {
         ...corsHeaders,
