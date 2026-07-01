@@ -151,6 +151,14 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
     setIsLoadingAudio(true);
     const plainText = stripMarkdown(narration);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        console.warn('No session for TTS, falling back to browser TTS');
+        setIsLoadingAudio(false);
+        speakWithBrowserTTS(plainText);
+        return;
+      }
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
         {
@@ -158,7 +166,7 @@ export function TripNarrator({ locations, vehicleType, optimizationResult }: Tri
           headers: {
             'Content-Type': 'application/json',
             apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            Authorization: `Bearer ${accessToken}`,
           },
           body: JSON.stringify({ text: plainText, language: generatedLang }),
         }

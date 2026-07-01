@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -9,8 +11,34 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Require authenticated user
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const supabaseAuth = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
+  );
+  const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
-    const { city } = await req.json().catch(() => ({ city: "Hyderabad" }));
+    const body = await req.json().catch(() => ({ city: "Hyderabad" }));
+    // Sanitize city: allow only letters, spaces, hyphens, dots; cap 50 chars
+    const rawCity = body?.city;
+    const city = typeof rawCity === "string"
+      ? (rawCity.replace(/[^a-zA-Z\s\-\.]/g, "").slice(0, 50).trim() || "Hyderabad")
+      : "Hyderabad";
     console.log("Fetching fuel prices for:", city);
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -65,32 +93,20 @@ Deno.serve(async (req) => {
     }
 
     const aiData = await response.json();
-    console.log("AI raw response:", JSON.stringify(aiData.choices?.[0]?.message));
-
-    // Try tool_calls first
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     let prices;
 
     if (toolCall?.function?.arguments) {
       prices = JSON.parse(toolCall.function.arguments);
-      console.log("Parsed from tool_calls:", JSON.stringify(prices));
     } else {
-      // Parse from content
       const content = aiData.choices?.[0]?.message?.content || "";
-      console.log("AI content:", content);
       const cleaned = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*?\}/);
-      if (!jsonMatch) {
-        throw new Error("Could not parse JSON from AI response");
-      }
+      if (!jsonMatch) throw new Error("Could not parse JSON from AI response");
       prices = JSON.parse(jsonMatch[0]);
     }
 
-    console.log("Parsed prices:", JSON.stringify(prices));
-
-    // Validate - if zeros, use fallback prices
     if (!prices.petrol || prices.petrol === 0 || !prices.diesel || prices.diesel === 0) {
-      console.warn("AI returned zero prices, using fallback");
       prices = getFallbackPrices(city);
     }
 
@@ -109,19 +125,12 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("get-fuel-prices error:", e);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: e instanceof Error ? e.message : "Unknown error",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ success: false, error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
 
-// Fallback prices based on known Indian city fuel prices (late 2024 data)
 function getFallbackPrices(city: string): { petrol: number; diesel: number; cng: number; city: string } {
   const c = city.toLowerCase();
   const cityPrices: Record<string, { petrol: number; diesel: number; cng: number }> = {
@@ -140,7 +149,6 @@ function getFallbackPrices(city: string): { petrol: number; diesel: number; cng:
     "vijayawada": { petrol: 109.66, diesel: 97.82, cng: 78.00 },
     "tenali": { petrol: 109.66, diesel: 97.82, cng: 78.00 },
   };
-
   const match = cityPrices[c] || { petrol: 103.00, diesel: 92.00, cng: 77.00 };
   return { ...match, city };
 }
